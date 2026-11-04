@@ -34,7 +34,7 @@ export async function GET(req) {
 
   try {
     const res = await fetch(
-      `${OPENROUTER_BASE}?start=${startStr}&end=${endStr}`,
+      `${OPENROUTER_BASE}?start_date=${startStr}&end_date=${endStr}`,
       {
         headers: {
           Authorization: `Bearer ${key}`,
@@ -57,14 +57,16 @@ export async function GET(req) {
 
     for (const row of rows) {
       const slug = row.model_permaslug || row.model || '';
-      if (!slug.startsWith(prefix)) continue;
-
       const date = (row.date || '').slice(0, 10);
       if (!date) continue;
 
       const tokens = Number(row.total_tokens || row.tokens || 0);
-      if (!byDate[date]) byDate[date] = 0;
-      byDate[date] += tokens;
+
+      // Include provider models + the aggregated "other" row so totals are complete
+      if (slug.startsWith(prefix) || slug === 'other') {
+        if (!byDate[date]) byDate[date] = 0;
+        byDate[date] += tokens;
+      }
     }
 
     const dates = Object.keys(byDate).sort();
@@ -87,6 +89,7 @@ export async function GET(req) {
         end: endStr,
         days,
         fetchedAt: new Date().toISOString(),
+        rowCount: rows.length,
       },
     });
   } catch (err) {
