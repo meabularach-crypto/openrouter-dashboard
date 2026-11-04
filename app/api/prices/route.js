@@ -2,53 +2,69 @@ import { NextResponse } from 'next/server';
 
 const PRICE_URL = 'https://www.aipricing.guru/api/price-history.json';
 
+function average(nums) {
+  if (!nums.length) return null;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
+
 export async function GET(req) {
   const url = new URL(req.url);
+  const days = Math.min(parseInt(url.searchParams.get('days') || '90', 10), 365);
   const provider = (url.searchParams.get('provider') || 'anthropic').toLowerCase();
 
   try {
     const res = await fetch(PRICE_URL, { next: { revalidate: 3600 } });
-    if (!res.ok) {
-      return NextResponse.json({ error: `Price API ${res.status}` }, { status: 502 });
-    }
-    const data = await res.json();
-    const snaps = data.snapshots || [];
+    if (!res.ok) throw new Error(`Price feed ${res.status}`);
+    const json = await res.json();
 
-    // Build daily median input/output for the requested provider
-    const byDate = {};
-    for (const snap of snaps) {
-      const date = snap.date;
-      const models = (snap.models || []).filter(m => m.provider === provider);
-      if (!models.length) continue;
-
-      const inputs = models.map(m => m.inputPerM).filter(n => n != null);
-      const outputs = models.map(m => m.outputPerM).filter(n => n != null);
-      if (!inputs.length) continue;
-
-      const median = arr => {
-        const s = [...arr].sort((a, b) => a - b);
-        const mid = Math.floor(s.length / 2);
-        return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-      };
-
-      byDate[date] = {
-        date,
-        median_input: median(inputs),
-        median_output: median(outputs),
-        n_models: models.length,
-      };
+    const snapshots = json.snapshots || json.data || json;
+    if (!Array.isArray(snapshots)) {
+      return NextResponse.json({ error: 'Unexpected price data format' }, { status: 500 });
     }
 
-    const series = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
+    const end = new Date();
+    const start = new Date(end);
+    start.setDate(end.getDate() - days);
+    const startStr = start.toISOString().slice(0, 10);
+
+    const daily = [];
+
+    for (const snap of snapshots) {
+      const date = (snap.date || snap.snapshotDate || '').slice(0, 10);
+      if (!date || date < startStr) continue;
+
+      const models = snap.models || snap.prices || [];
+      const inputs = [];
+      const outputs = [];
+
+      for (const m of models) {
+        const id = (m.id || m.model || m.slug || '').toLowerCase();
+        const isProvider = provider === 'openai'
+          ? id.includes('gpt') || id.includes('openai') || id.startsWith('o1') || id.startsWith('o3')
+          : id.includes('claude') || id.includes('anthropic');
+
+        if (!isProvider) continue;
+
+        const inp = m.inputPerM ?? m.input ?? m.prompt;
+        const out = m.outputPerM ?? m.output ?? m.completion;
+        if (inp != null) inputs.push(Number(inp));
+        if (out != null) outputs.push(Number(out));
+      }
+
+      if (inputs.length || outputs.length) {
+        daily.push({
+          date,
+          avg_input: average(inputs),
+          avg_output: average(outputs),
+        });
+      }
+    }
+
+    daily.sort((a, b) => a.date.localeCompare(b.date));
 
     return NextResponse.json({
-      series,
-      meta: {
-        provider,
-        source: 'AI Pricing Guru',
-        snapshotCount: snaps.length,
-        fetchedAt: new Date().toISOString(),
-      },
+      daily,
+      meta: { provider, days, start: startStr },
     });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
