@@ -6,98 +6,134 @@ import {
 } from 'recharts';
 
 export default function Dashboard() {
-  const [volData, setVolData] = useState(null);
-  const [priceData, setPriceData] = useState(null);
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [days, setDays] = useState(90);
   const [provider, setProvider] = useState('anthropic');
-  const [showPrice, setShowPrice] = useState(true);
+  const [days, setDays] = useState(90);
+  const [showPrice, setShowPrice] = useState(false);
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-    Promise.all([
-      fetch(`/api/data?days=${days}&provider=${provider}`).then(r => r.json()),
-      fetch(`/api/prices?provider=${provider}`).then(r => r.json()),
-    ])
-      .then(([v, p]) => {
-        if (v.error) throw new Error(v.error);
-        if (p.error) throw new Error(p.error);
-        setVolData(v);
-        setPriceData(p);
-      })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [days, provider]);
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const [volRes, priceRes] = await Promise.all([
+          fetch(`/api/data?provider=${provider}&days=${days}`),
+          fetch(`/api/prices?provider=${provider}&days=${days}`),
+        ]);
+        const volJson = await volRes.json();
+        const priceJson = await priceRes.json();
+        if (cancelled) return;
+        if (volJson.error) throw new Error(volJson.error);
+        if (priceJson.error) throw new Error(priceJson.error);
 
-  if (loading) return <p>Loading data…</p>;
-  if (error) return <p style={{ color: '#f87171' }}>Error: {error}</p>;
-  if (!volData) return null;
+        const priceMap = Object.fromEntries(
+          (priceJson.daily || []).map(p => [p.date, p])
+        );
 
-  const fmt = (n) => n >= 1e12 ? `${(n/1e12).toFixed(1)}T` : n >= 1e9 ? `${(n/1e9).toFixed(1)}B` : n >= 1e6 ? `${(n/1e6).toFixed(1)}M` : n.toLocaleString();
+        const merged = (volJson.daily || []).map(d => ({
+          ...d,
+          avg_input: priceMap[d.date]?.avg_input ?? null,
+          avg_output: priceMap[d.date]?.avg_output ?? null,
+        }));
 
-  // Join volume + price on date
-  const priceMap = Object.fromEntries((priceData?.series || []).map(s => [s.date, s]));
-  const chartData = (volData.daily || []).map(d => ({
-    ...d,
-    median_input: priceMap[d.date]?.median_input ?? null,
-    median_output: priceMap[d.date]?.median_output ?? null,
-  }));
+        setData(merged);
+      } catch (e) {
+        if (!cancelled) setError(e.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [provider, days]);
+
+  if (error) return <div style={{ color: 'red', padding: 20 }}>Error: {error}</div>;
+  if (loading) return <div style={{ padding: 20 }}>Loading…</div>;
 
   return (
     <div>
-      <div style={{ marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        <label>Provider:</label>
-        <select value={provider} onChange={e => setProvider(e.target.value)} style={{ background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155', padding: '4px 8px' }}>
-          <option value="anthropic">Anthropic</option>
-          <option value="openai">OpenAI</option>
-        </select>
-
-        <label>Lookback:</label>
-        <select value={days} onChange={e => setDays(Number(e.target.value))} style={{ background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155', padding: '4px 8px' }}>
-          <option value={30}>30 days</option>
-          <option value={60}>60 days</option>
-          <option value={90}>90 days</option>
-          <option value={180}>180 days</option>
-          <option value={365}>365 days</option>
-        </select>
-
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        <label>
+          Provider:&nbsp;
+          <select value={provider} onChange={e => setProvider(e.target.value)}>
+            <option value="anthropic">Anthropic</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </label>
+        <label>
+          Lookback:&nbsp;
+          <select value={days} onChange={e => setDays(Number(e.target.value))}>
+            <option value={30}>30 days</option>
+            <option value={90}>90 days</option>
+            <option value={180}>180 days</option>
+            <option value={365}>365 days</option>
+          </select>
+        </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <input type="checkbox" checked={showPrice} onChange={e => setShowPrice(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={showPrice}
+            onChange={e => setShowPrice(e.target.checked)}
+          />
           Show price overlay
         </label>
-
-        <span style={{ color: '#64748b', fontSize: 13 }}>
-          {volData.meta?.start} → {volData.meta?.end} · volumes cached ~1h · prices from AI Pricing Guru
-        </span>
       </div>
 
-      <section style={{ marginBottom: 32 }}>
-        <h2 style={{ fontSize: 18 }}>Daily Token Volume ({provider})</h2>
-        <ResponsiveContainer width="100%" height={360}>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-            <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 11 }} />
-            <YAxis yAxisId="left" tick={{ fill: '#94a3b8' }} tickFormatter={fmt} />
-            {showPrice && <YAxis yAxisId="right" orientation="right" tick={{ fill: '#94a3b8' }} />}
-            <Tooltip formatter={(v, name) => name.includes('price') || name.includes('median') ? `$${v?.toFixed?.(2) ?? v}` : fmt(v)} contentStyle={{ background: '#1e293b', border: '1px solid #334155' }} />
-            <Legend />
-            <Line yAxisId="left" type="monotone" dataKey="tokens" name="Daily tokens" stroke="#38bdf8" dot={false} strokeWidth={1.5} />
-            <Line yAxisId="left" type="monotone" dataKey="trailing7" name="Trailing 7d" stroke="#a78bfa" dot={false} strokeWidth={2} />
-            <Line yAxisId="left" type="monotone" dataKey="trailing28" name="Trailing 28d" stroke="#f472b6" dot={false} strokeWidth={2} />
-            {showPrice && (
-              <>
-                <Line yAxisId="right" type="monotone" dataKey="median_input" name="Median input $/M" stroke="#34d399" dot={false} strokeWidth={1.5} strokeDasharray="4 4" />
-                <Line yAxisId="right" type="monotone" dataKey="median_output" name="Median output $/M" stroke="#fbbf24" dot={false} strokeWidth={1.5} strokeDasharray="4 4" />
-              </>
-            )}
-          </LineChart>
-        </ResponsiveContainer>
-        <p style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}>
-          Token volumes from OpenRouter rankings-daily. Price overlay is daily median list price across the provider’s models from AI Pricing Guru (free, no key). Prices only available from mid-April 2026 onward.
-        </p>
-      </section>
+      <ResponsiveContainer width="100%" height={420}>
+        <LineChart data={data} margin={{ top: 10, right: 50, left: 10, bottom: 10 }}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="date" minTickGap={40} />
+
+          {/* Left axis = token volume */}
+          <YAxis
+            yAxisId="left"
+            tickFormatter={v => (v / 1e12).toFixed(1) + 'T'}
+          />
+
+          {/* Right axis = price ($/M) — only when overlay is on */}
+          {showPrice && (
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              domain={['auto', 'auto']}
+              tickFormatter={v => '$' + Number(v).toFixed(2)}
+            />
+          )}
+
+          <Tooltip />
+          <Legend />
+
+          <Line yAxisId="left" type="monotone" dataKey="tokens" name="Daily tokens" stroke="#8884d8" dot={false} />
+          <Line yAxisId="left" type="monotone" dataKey="trailing7" name="7-day trailing" stroke="#82ca9d" dot={false} />
+          <Line yAxisId="left" type="monotone" dataKey="trailing28" name="28-day trailing" stroke="#ffc658" dot={false} />
+
+          {showPrice && (
+            <>
+              <Line
+                yAxisId="right"
+                type="monotone"
+                dataKey="avg_input"
+                name="Avg input $/M"
+                stroke="#ff7300"
+                dot={false}
+                connectNulls
+              />
+              <Line
+                yAxisId="right"
+                type="monotone"
+                dataKey="avg_output"
+                name="Avg output $/M"
+                stroke="#d45087"
+                dot={false}
+                connectNulls
+              />
+            </>
+          )}
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 }
