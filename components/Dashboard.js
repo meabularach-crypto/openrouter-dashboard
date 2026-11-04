@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  ScatterChart, Scatter, ZAxis,
 } from 'recharts';
 
 const ARR_POINTS = {
@@ -26,6 +27,41 @@ const ARR_POINTS = {
     { date: '2026-09-30', arr: 50e9 },
   ],
 };
+
+function nearestSpend(data, targetDate) {
+  if (!data.length) return null;
+  let best = null;
+  let bestDiff = Infinity;
+  for (const d of data) {
+    const diff = Math.abs(new Date(d.date) - new Date(targetDate));
+    if (diff < bestDiff && d.trailing28_spend != null) {
+      bestDiff = diff;
+      best = d.trailing28_spend;
+    }
+  }
+  return best;
+}
+
+function linearTrend(points) {
+  if (points.length < 2) return [];
+  const n = points.length;
+  let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+  for (const p of points) {
+    sumX += p.spend;
+    sumY += p.arr;
+    sumXY += p.spend * p.arr;
+    sumXX += p.spend * p.spend;
+  }
+  const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+  const intercept = (sumY - slope * sumX) / n;
+
+  const minX = Math.min(...points.map(p => p.spend));
+  const maxX = Math.max(...points.map(p => p.spend));
+  return [
+    { spend: minX, trend: intercept + slope * minX },
+    { spend: maxX, trend: intercept + slope * maxX },
+  ];
+}
 
 export default function Dashboard() {
   const [tab, setTab] = useState('volume');
@@ -57,159 +93,3 @@ export default function Dashboard() {
         );
 
         const arrMap = Object.fromEntries(
-          (ARR_POINTS[provider] || []).map(p => [p.date, p.arr])
-        );
-
-        const merged = (volJson.daily || []).map(d => {
-          const avgInput = priceMap[d.date]?.avg_input ?? null;
-          const avgOutput = priceMap[d.date]?.avg_output ?? null;
-          const blendedPrice = (avgInput != null && avgOutput != null)
-            ? avgInput * 0.75 + avgOutput * 0.25
-            : null;
-          const spend = (blendedPrice != null && d.tokens)
-            ? (d.tokens / 1_000_000) * blendedPrice
-            : null;
-
-          return {
-            ...d,
-            avg_input: avgInput,
-            avg_output: avgOutput,
-            blended_price: blendedPrice,
-            spend,
-            arr: arrMap[d.date] ?? null,
-          };
-        });
-
-        // 28-day trailing spend
-        const spends = merged.map(d => d.spend || 0);
-        const t28 = [];
-        let sum = 0;
-        const q = [];
-        for (let i = 0; i < spends.length; i++) {
-          sum += spends[i];
-          q.push(spends[i]);
-          if (q.length > 28) sum -= q.shift();
-          t28.push(q.length === 28 ? sum / 28 : null);
-        }
-        merged.forEach((d, i) => { d.trailing28_spend = t28[i]; });
-
-        setData(merged);
-      } catch (e) {
-        if (!cancelled) setError(e.message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [provider, days]);
-
-  if (error) return <div style={{ color: 'red', padding: 20 }}>Error: {error}</div>;
-  if (loading) return <div style={{ padding: 20 }}>Loading…</div>;
-
-  const tabStyle = (active) => ({
-    padding: '8px 16px',
-    border: 'none',
-    background: active ? '#111' : '#eee',
-    color: active ? '#fff' : '#111',
-    cursor: 'pointer',
-    borderRadius: 6,
-  });
-
-  return (
-    <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <button style={tabStyle(tab === 'volume')} onClick={() => setTab('volume')}>
-          Volume & Price
-        </button>
-        <button style={tabStyle(tab === 'spend')} onClick={() => setTab('spend')}>
-          Estimated Spend
-        </button>
-      </div>
-
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-        <label>
-          Provider:&nbsp;
-          <select value={provider} onChange={e => setProvider(e.target.value)}>
-            <option value="anthropic">Anthropic</option>
-            <option value="openai">OpenAI</option>
-          </select>
-        </label>
-        <label>
-          Lookback:&nbsp;
-          <select value={days} onChange={e => setDays(Number(e.target.value))}>
-            <option value={90}>90 days</option>
-            <option value={180}>180 days</option>
-            <option value={365}>365 days</option>
-          </select>
-        </label>
-        {tab === 'volume' && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input type="checkbox" checked={showPrice} onChange={e => setShowPrice(e.target.checked)} />
-            Show price overlay
-          </label>
-        )}
-      </div>
-
-      <ResponsiveContainer width="100%" height={440}>
-        <ComposedChart data={data} margin={{ top: 10, right: 60, left: 10, bottom: 10 }}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="date" minTickGap={40} />
-
-          {tab === 'volume' ? (
-            <>
-              <YAxis yAxisId="left" tickFormatter={v => (v / 1e12).toFixed(1) + 'T'} />
-              {showPrice && (
-                <YAxis yAxisId="right" orientation="right" domain={['auto', 'auto']} tickFormatter={v => '$' + Number(v).toFixed(2)} />
-              )}
-              <Tooltip />
-              <Legend />
-              <Line yAxisId="left" type="monotone" dataKey="tokens" name="Daily tokens" stroke="#8884d8" dot={false} />
-              <Line yAxisId="left" type="monotone" dataKey="trailing7" name="7-day trailing" stroke="#82ca9d" dot={false} />
-              <Line yAxisId="left" type="monotone" dataKey="trailing28" name="28-day trailing" stroke="#ffc658" dot={false} />
-              {showPrice && (
-                <>
-                  <Line yAxisId="right" type="monotone" dataKey="avg_input" name="Avg input $/M" stroke="#ff7300" dot={false} connectNulls />
-                  <Line yAxisId="right" type="monotone" dataKey="avg_output" name="Avg output $/M" stroke="#d45087" dot={false} connectNulls />
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              <YAxis yAxisId="left" tickFormatter={v => '$' + (v / 1e6).toFixed(1) + 'M'} />
-              <YAxis
-                yAxisId="right"
-                orientation="right"
-                tickFormatter={v => '$' + (v / 1e9).toFixed(0) + 'B'}
-                domain={['auto', 'auto']}
-              />
-              <Tooltip
-                formatter={(value, name) => {
-                  if (name === 'Reported ARR') return ['$' + (value / 1e9).toFixed(1) + 'B', name];
-                  return [value != null ? `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—', name];
-                }}
-              />
-              <Legend />
-              <Line yAxisId="left" type="monotone" dataKey="spend" name="Estimated daily spend" stroke="#8884d8" dot={false} connectNulls />
-              <Line yAxisId="left" type="monotone" dataKey="trailing28_spend" name="28-day trailing spend" stroke="#ffc658" dot={false} connectNulls />
-              <Bar
-                yAxisId="right"
-                dataKey="arr"
-                name="Reported ARR"
-                fill="#e74c3c"
-                barSize={12}
-              />
-            </>
-          )}
-        </ComposedChart>
-      </ResponsiveContainer>
-
-      {tab === 'spend' && (
-        <p style={{ fontSize: 13, color: '#666', marginTop: 8 }}>
-          Red bars = publicly reported ARR / run-rate figures (right axis, in billions).  
-          Lines = estimated daily and 28-day trailing spend from OpenRouter volume × average list price (left axis).
-        </p>
-      )}
-    </div>
-  );
-}
