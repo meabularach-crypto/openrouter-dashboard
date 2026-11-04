@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Scatter,
+  ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 
-// Reported ARR / run-rate points (USD). Dates are approximate to the reporting period.
 const ARR_POINTS = {
   anthropic: [
     { date: '2025-01-01', arr: 1e9 },
@@ -57,6 +56,10 @@ export default function Dashboard() {
           (priceJson.daily || []).map(p => [p.date, p])
         );
 
+        const arrMap = Object.fromEntries(
+          (ARR_POINTS[provider] || []).map(p => [p.date, p.arr])
+        );
+
         const merged = (volJson.daily || []).map(d => {
           const avgInput = priceMap[d.date]?.avg_input ?? null;
           const avgOutput = priceMap[d.date]?.avg_output ?? null;
@@ -73,10 +76,11 @@ export default function Dashboard() {
             avg_output: avgOutput,
             blended_price: blendedPrice,
             spend,
+            arr: arrMap[d.date] ?? null,
           };
         });
 
-        // Simple 28-day trailing spend
+        // 28-day trailing spend
         const spends = merged.map(d => d.spend || 0);
         const t28 = [];
         let sum = 0;
@@ -102,11 +106,6 @@ export default function Dashboard() {
 
   if (error) return <div style={{ color: 'red', padding: 20 }}>Error: {error}</div>;
   if (loading) return <div style={{ padding: 20 }}>Loading…</div>;
-
-  const arrPoints = (ARR_POINTS[provider] || []).filter(p => {
-    if (!data.length) return false;
-    return p.date >= data[0].date && p.date <= data[data.length - 1].date;
-  });
 
   const tabStyle = (active) => ({
     padding: '8px 16px',
@@ -153,7 +152,7 @@ export default function Dashboard() {
       </div>
 
       <ResponsiveContainer width="100%" height={440}>
-        <LineChart data={data} margin={{ top: 10, right: 60, left: 10, bottom: 10 }}>
+        <ComposedChart data={data} margin={{ top: 10, right: 60, left: 10, bottom: 10 }}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="date" minTickGap={40} />
 
@@ -193,24 +192,22 @@ export default function Dashboard() {
               <Legend />
               <Line yAxisId="left" type="monotone" dataKey="spend" name="Estimated daily spend" stroke="#8884d8" dot={false} connectNulls />
               <Line yAxisId="left" type="monotone" dataKey="trailing28_spend" name="28-day trailing spend" stroke="#ffc658" dot={false} connectNulls />
-              <Scatter
+              <Bar
                 yAxisId="right"
-                data={arrPoints}
                 dataKey="arr"
                 name="Reported ARR"
                 fill="#e74c3c"
-                shape="circle"
+                barSize={12}
               />
             </>
           )}
-        </LineChart>
+        </ComposedChart>
       </ResponsiveContainer>
 
       {tab === 'spend' && (
         <p style={{ fontSize: 13, color: '#666', marginTop: 8 }}>
-          Red dots = publicly reported ARR / run-rate figures (company statements & major press).  
-          Left axis = estimated daily / 28-day trailing spend from OpenRouter volume × average list price.  
-          Right axis = ARR in billions. Axes are independent so the dots can be compared visually to the trailing line.
+          Red bars = publicly reported ARR / run-rate figures (right axis, in billions).  
+          Lines = estimated daily and 28-day trailing spend from OpenRouter volume × average list price (left axis).
         </p>
       )}
     </div>
