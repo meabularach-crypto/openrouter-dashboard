@@ -146,4 +146,13 @@ export default function Dashboard() {
         } else {
           const [volRes, priceRes] = await Promise.all([
             fetch(`/api/data?provider=${provider}&days=${days}`),
-            fetch(`/api/prices?provider=${provider
+            fetch(`/api/prices?provider=${provider}&days=${days}`),
+          ]);
+          const volJson = await volRes.json();
+          const priceJson = await priceRes.json();
+          if (cancelled) return;
+          if (volJson.error) throw new Error(volJson.error);
+          if (priceJson.error) throw new Error(priceJson.error);
+
+          const priceMap = Object.fromEntries((priceJson.daily || []).map(p => [p.date, p]));
+          const arrMap = Object.fromEntries
