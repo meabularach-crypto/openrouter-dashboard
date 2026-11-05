@@ -2,9 +2,34 @@ import { NextResponse } from 'next/server';
 
 const PRICE_URL = 'https://www.aipricing.guru/api/price-history.json';
 
+// Approximate blended averages ($/M, 75/25 input/output mix) for periods before the live feed.
+// These are rough but stable enough for historical correlation.
+const HISTORICAL_AVG = {
+  anthropic: [
+    { from: '2024-01-01', to: '2024-06-30', avg_input: 15, avg_output: 75 },   // Claude 3 Opus era
+    { from: '2024-07-01', to: '2025-03-31', avg_input: 3, avg_output: 15 },    // Claude 3.5 Sonnet dominant
+    { from: '2025-04-01', to: '2026-04-15', avg_input: 3, avg_output: 15 },
+  ],
+  openai: [
+    { from: '2024-01-01', to: '2024-05-12', avg_input: 5, avg_output: 15 },    // GPT-4 Turbo
+    { from: '2024-05-13', to: '2025-12-31', avg_input: 2.5, avg_output: 10 },  // GPT-4o era
+    { from: '2026-01-01', to: '2026-04-15', avg_input: 2.5, avg_output: 10 },
+  ],
+};
+
 function average(nums) {
   if (!nums.length) return null;
   return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
+
+function getHistorical(provider, date) {
+  const ranges = HISTORICAL_AVG[provider] || [];
+  for (const r of ranges) {
+    if (date >= r.from && date <= r.to) {
+      return { avg_input: r.avg_input, avg_output: r.avg_output };
+    }
+  }
+  return null;
 }
 
 export async function GET(req) {
@@ -27,7 +52,7 @@ export async function GET(req) {
     start.setDate(end.getDate() - days);
     const startStr = start.toISOString().slice(0, 10);
 
-    const daily = [];
+    const dailyMap = {};
 
     for (const snap of snapshots) {
       const date = (snap.date || snap.snapshotDate || '').slice(0, 10);
@@ -52,18 +77,32 @@ export async function GET(req) {
       }
 
       if (inputs.length || outputs.length) {
-        daily.push({
-          date,
+        dailyMap[date] = {
           avg_input: average(inputs),
           avg_output: average(outputs),
-        });
+        };
       }
     }
 
-    daily.sort((a, b) => a.date.localeCompare(b.date));
+    // Fill any missing dates in the window with historical fallback
+    const result = [];
+    const cursor = new Date(startStr);
+    const endDate = new Date();
+    while (cursor <= endDate) {
+      const d = cursor.toISOString().slice(0, 10);
+      if (dailyMap[d]) {
+        result.push({ date: d, ...dailyMap[d] });
+      } else {
+        const hist = getHistorical(provider, d);
+        if (hist) result.push({ date: d, ...hist });
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    result.sort((a, b) => a.date.localeCompare(b.date));
 
     return NextResponse.json({
-      daily,
+      daily: result,
       meta: { provider, days, start: startStr },
     });
   } catch (err) {
