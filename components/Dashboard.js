@@ -54,7 +54,6 @@ function linearTrend(points) {
   }
   const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
   const intercept = (sumY - slope * sumX) / n;
-
   const minX = Math.min(...points.map(p => p.spend));
   const maxX = Math.max(...points.map(p => p.spend));
   return [
@@ -92,27 +91,14 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Visibility state for series toggling
   const [visible, setVisible] = useState({
-    // Volume
-    tokens: true,
-    trailing7: true,
-    trailing28: true,
-    avg_input: true,
-    avg_output: true,
-    // Spend
-    spend: true,
-    trailing28_spend: true,
-    arr: true,
-    // Consolidated
-    anthropic: true,
-    openai: true,
-    trailing28_total: true,
+    tokens: true, trailing7: true, trailing28: true,
+    avg_input: true, avg_output: true,
+    spend: true, trailing28_spend: true, arr: true,
+    anthropic: true, openai: true, trailing28_total: true,
   });
 
-  const toggleSeries = (key) => {
-    setVisible(prev => ({ ...prev, [key]: !prev[key] }));
-  };
+  const toggleSeries = (key) => setVisible(prev => ({ ...prev, [key]: !prev[key] }));
 
   useEffect(() => {
     let cancelled = false;
@@ -127,245 +113,37 @@ export default function Dashboard() {
             fetch(`/api/data?provider=openai&days=${days}`).then(r => r.json()),
             fetch(`/api/prices?provider=openai&days=${days}`).then(r => r.json()),
           ]);
-
           if (cancelled) return;
-          if (anthVol.error || anthPrice.error || oaiVol.error || oaiPrice.error) {
-            throw new Error('Failed to load one of the datasets');
-          }
+          if (anthVol.error || anthPrice.error || oaiVol.error || oaiPrice.error) throw new Error('Failed to load datasets');
 
           const anthPriceMap = Object.fromEntries((anthPrice.daily || []).map(p => [p.date, p]));
           const oaiPriceMap = Object.fromEntries((oaiPrice.daily || []).map(p => [p.date, p]));
-
-          const dateSet = new Set([
-            ...(anthVol.daily || []).map(d => d.date),
-            ...(oaiVol.daily || []).map(d => d.date),
-          ]);
+          const dateSet = new Set([...(anthVol.daily || []).map(d => d.date), ...(oaiVol.daily || []).map(d => d.date)]);
           const allDates = Array.from(dateSet).sort();
 
           const merged = allDates.map(date => {
             const anth = (anthVol.daily || []).find(d => d.date === date) || {};
             const oai = (oaiVol.daily || []).find(d => d.date === date) || {};
-
-            const anthPrice = anthPriceMap[date];
-            const oaiPrice = oaiPriceMap[date];
-
-            const anthBlended = anthPrice ? anthPrice.avg_input * 0.75 + anthPrice.avg_output * 0.25 : null;
-            const oaiBlended = oaiPrice ? oaiPrice.avg_input * 0.75 + oaiPrice.avg_output * 0.25 : null;
-
-            const anthSpend = (anthBlended != null && anth.tokens) ? (anth.tokens / 1_000_000) * anthBlended : 0;
-            const oaiSpend = (oaiBlended != null && oai.tokens) ? (oai.tokens / 1_000_000) * oaiBlended : 0;
-
-            return {
-              date,
-              anthropic: anthSpend,
-              openai: oaiSpend,
-              total: anthSpend + oaiSpend,
-            };
+            const aP = anthPriceMap[date];
+            const oP = oaiPriceMap[date];
+            const aBlend = aP ? aP.avg_input * 0.75 + aP.avg_output * 0.25 : null;
+            const oBlend = oP ? oP.avg_input * 0.75 + oP.avg_output * 0.25 : null;
+            const aSpend = (aBlend != null && anth.tokens) ? (anth.tokens / 1e6) * aBlend : 0;
+            const oSpend = (oBlend != null && oai.tokens) ? (oai.tokens / 1e6) * oBlend : 0;
+            return { date, anthropic: aSpend, openai: oSpend, total: aSpend + oSpend };
           });
 
           const totals = merged.map(d => d.total || 0);
           const t28 = [];
-          let sum = 0;
-          const q = [];
+          let sum = 0; const q = [];
           for (let i = 0; i < totals.length; i++) {
-            sum += totals[i];
-            q.push(totals[i]);
+            sum += totals[i]; q.push(totals[i]);
             if (q.length > 28) sum -= q.shift();
             t28.push(q.length === 28 ? sum / 28 : null);
           }
           merged.forEach((d, i) => { d.trailing28_total = t28[i]; });
-
           setConsolidatedData(merged);
         } else {
           const [volRes, priceRes] = await Promise.all([
             fetch(`/api/data?provider=${provider}&days=${days}`),
-            fetch(`/api/prices?provider=${provider}&days=${days}`),
-          ]);
-          const volJson = await volRes.json();
-          const priceJson = await priceRes.json();
-          if (cancelled) return;
-          if (volJson.error) throw new Error(volJson.error);
-          if (priceJson.error) throw new Error(priceJson.error);
-
-          const priceMap = Object.fromEntries(
-            (priceJson.daily || []).map(p => [p.date, p])
-          );
-
-          const arrMap = Object.fromEntries(
-            (ARR_POINTS[provider] || []).map(p => [p.date, p.arr])
-          );
-
-          const merged = (volJson.daily || []).map(d => {
-            const avgInput = priceMap[d.date]?.avg_input ?? null;
-            const avgOutput = priceMap[d.date]?.avg_output ?? null;
-            const blendedPrice = (avgInput != null && avgOutput != null)
-              ? avgInput * 0.75 + avgOutput * 0.25
-              : null;
-            const spend = (blendedPrice != null && d.tokens)
-              ? (d.tokens / 1_000_000) * blendedPrice
-              : null;
-
-            return {
-              ...d,
-              avg_input: avgInput,
-              avg_output: avgOutput,
-              blended_price: blendedPrice,
-              spend,
-              arr: arrMap[d.date] ?? null,
-            };
-          });
-
-          const spends = merged.map(d => d.spend || 0);
-          const t28 = [];
-          let sum = 0;
-          const q = [];
-          for (let i = 0; i < spends.length; i++) {
-            sum += spends[i];
-            q.push(spends[i]);
-            if (q.length > 28) sum -= q.shift();
-            t28.push(q.length === 28 ? sum / 28 : null);
-          }
-          merged.forEach((d, i) => { d.trailing28_spend = t28[i]; });
-
-          setData(merged);
-        }
-      } catch (e) {
-        if (!cancelled) setError(e.message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [provider, days, tab]);
-
-  if (error) return <div style={{ color: 'red', padding: 20 }}>Error: {error}</div>;
-  if (loading) return <div style={{ padding: 20 }}>Loading…</div>;
-
-  const tabStyle = (active) => ({
-    padding: '8px 16px',
-    border: 'none',
-    background: active ? '#111' : '#eee',
-    color: active ? '#fff' : '#111',
-    cursor: 'pointer',
-    borderRadius: 6,
-  });
-
-  const corrPoints = (ARR_POINTS[provider] || [])
-    .map(p => {
-      const spend = nearestSpend(data, p.date);
-      return spend != null ? { date: p.date, spend, arr: p.arr } : null;
-    })
-    .filter(Boolean);
-
-  const trend = linearTrend(corrPoints);
-
-  const handleDownload = () => {
-    if (tab === 'corr') {
-      downloadCSV(`correlation_${provider}.csv`, corrPoints);
-    } else if (tab === 'consolidated') {
-      downloadCSV(`consolidated_spend_${days}d.csv`, consolidatedData);
-    } else {
-      downloadCSV(`${tab}_${provider}_${days}d.csv`, data);
-    }
-  };
-
-  const legendClick = (e) => {
-    if (e && e.dataKey) toggleSeries(e.dataKey);
-  };
-
-  return (
-    <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-        <button style={tabStyle(tab === 'volume')} onClick={() => setTab('volume')}>Volume & Price</button>
-        <button style={tabStyle(tab === 'spend')} onClick={() => setTab('spend')}>Estimated Spend</button>
-        <button style={tabStyle(tab === 'corr')} onClick={() => setTab('corr')}>Correlation</button>
-        <button style={tabStyle(tab === 'consolidated')} onClick={() => setTab('consolidated')}>Consolidated Spend</button>
-        <button
-          onClick={handleDownload}
-          style={{ marginLeft: 'auto', padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}
-        >
-          Download CSV
-        </button>
-      </div>
-
-      {tab !== 'consolidated' && (
-        <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-          <label>
-            Provider:&nbsp;
-            <select value={provider} onChange={e => setProvider(e.target.value)}>
-              <option value="anthropic">Anthropic</option>
-              <option value="openai">OpenAI</option>
-            </select>
-          </label>
-          <label>
-            Lookback:&nbsp;
-            <select value={days} onChange={e => setDays(Number(e.target.value))}>
-              <option value={90}>90 days</option>
-              <option value={180}>180 days</option>
-              <option value={365}>365 days</option>
-            </select>
-          </label>
-          {tab === 'volume' && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input type="checkbox" checked={showPrice} onChange={e => setShowPrice(e.target.checked)} />
-              Show price overlay
-            </label>
-          )}
-        </div>
-      )}
-
-      {tab === 'consolidated' && (
-        <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-          <label>
-            Lookback:&nbsp;
-            <select value={days} onChange={e => setDays(Number(e.target.value))}>
-              <option value={90}>90 days</option>
-              <option value={180}>180 days</option>
-              <option value={365}>365 days</option>
-            </select>
-          </label>
-        </div>
-      )}
-
-      {tab === 'corr' ? (
-        <ResponsiveContainer width="100%" height={440}>
-          <ScatterChart margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis
-              type="number"
-              dataKey="spend"
-              name="28-day trailing spend"
-              tickFormatter={v => '$' + (v / 1e6).toFixed(1) + 'M'}
-            />
-            <YAxis
-              type="number"
-              dataKey="arr"
-              name="Reported ARR"
-              tickFormatter={v => '$' + (v / 1e9).toFixed(0) + 'B'}
-            />
-            <ZAxis range={[80, 80]} />
-            <Tooltip
-              formatter={(value, name) => {
-                if (name === 'Reported ARR') return ['$' + (value / 1e9).toFixed(1) + 'B', name];
-                if (name === '28-day trailing spend') return ['$' + (value / 1e6).toFixed(1) + 'M', name];
-                return [value, name];
-              }}
-              labelFormatter={() => ''}
-            />
-            <Legend onClick={legendClick} />
-            <Scatter name="ARR vs 28d spend" data={corrPoints} fill="#e74c3c" />
-            <Line
-              data={trend}
-              dataKey="trend"
-              stroke="#8884d8"
-              dot={false}
-              legendType="none"
-              strokeDasharray="5 5"
-            />
-          </ScatterChart>
-        </ResponsiveContainer>
-      ) : tab === 'consolidated' ? (
-        <ResponsiveContainer width="100%" height={440}>
-          <BarChart data={consolidatedData} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
-            <CartesianGrid strokeDasharray="
+            fetch(`/api/prices?provider=${provider
