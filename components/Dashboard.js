@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  ScatterChart, Scatter, ZAxis, BarChart,
+  ScatterChart, Scatter, ZAxis,
 } from 'recharts';
 
 const ARR_POINTS = {
@@ -88,6 +88,7 @@ export default function Dashboard() {
   const [showPrice, setShowPrice] = useState(false);
   const [data, setData] = useState([]);
   const [consolidatedData, setConsolidatedData] = useState([]);
+  const [hiddenPoints, setHiddenPoints] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -96,6 +97,7 @@ export default function Dashboard() {
     avg_input: true, avg_output: true,
     spend: true, trailing28_spend: true, arr: true,
     anthropic: true, openai: true, trailing28_total: true,
+    trailing28_anthropic: true, trailing28_openai: true,
   });
 
   const toggleSeries = (key) => setVisible(prev => ({ ...prev, [key]: !prev[key] }));
@@ -133,15 +135,27 @@ export default function Dashboard() {
             return { date, anthropic: aSpend, openai: oSpend, total: aSpend + oSpend };
           });
 
-          const totals = merged.map(d => d.total || 0);
-          const t28 = [];
-          let sum = 0; const q = [];
-          for (let i = 0; i < totals.length; i++) {
-            sum += totals[i]; q.push(totals[i]);
-            if (q.length > 28) sum -= q.shift();
-            t28.push(q.length === 28 ? sum / 28 : null);
-          }
-          merged.forEach((d, i) => { d.trailing28_total = t28[i]; });
+          const calcTrailing = (key) => {
+            const vals = merged.map(d => d[key] || 0);
+            const t28 = [];
+            let sum = 0; const q = [];
+            for (let i = 0; i < vals.length; i++) {
+              sum += vals[i]; q.push(vals[i]);
+              if (q.length > 28) sum -= q.shift();
+              t28.push(q.length === 28 ? sum / 28 : null);
+            }
+            return t28;
+          };
+
+          const t28Total = calcTrailing('total');
+          const t28Anth = calcTrailing('anthropic');
+          const t28Oai = calcTrailing('openai');
+          merged.forEach((d, i) => {
+            d.trailing28_total = t28Total[i];
+            d.trailing28_anthropic = t28Anth[i];
+            d.trailing28_openai = t28Oai[i];
+          });
+
           setConsolidatedData(merged);
         } else {
           const [volRes, priceRes] = await Promise.all([
@@ -193,12 +207,23 @@ export default function Dashboard() {
     color: active ? '#fff' : '#111', cursor: 'pointer', borderRadius: 6,
   });
 
-  const corrPoints = (ARR_POINTS[provider] || []).map(p => {
+  const rawCorrPoints = (ARR_POINTS[provider] || []).map(p => {
     const spend = nearestSpend(data, p.date);
-    return spend != null ? { date: p.date, spend, arr: p.arr } : null;
+    return spend != null ? { date: p.date, spend, arr: p.arr, id: p.date } : null;
   }).filter(Boolean);
 
+  const corrPoints = rawCorrPoints.filter(p => !hiddenPoints.has(p.id));
   const trend = linearTrend(corrPoints);
+
+  const handlePointClick = (point) => {
+    if (!point || !point.id) return;
+    setHiddenPoints(prev => {
+      const next = new Set(prev);
+      if (next.has(point.id)) next.delete(point.id);
+      else next.add(point.id);
+      return next;
+    });
+  };
 
   const handleDownload = () => {
     if (tab === 'corr') downloadCSV(`correlation_${provider}.csv`, corrPoints);
@@ -207,6 +232,12 @@ export default function Dashboard() {
   };
 
   const legendClick = (e) => { if (e?.dataKey) toggleSeries(e.dataKey); };
+
+  const legendFormatter = (value, entry) => {
+    const key = entry.dataKey;
+    const isVisible = visible[key] !== false;
+    return <span style={{ color: isVisible ? '#333' : '#aaa', opacity: isVisible ? 1 : 0.55 }}>{value}</span>;
+  };
 
   return (
     <div>
@@ -268,23 +299,25 @@ export default function Dashboard() {
               if (name === '28-day trailing spend') return ['$' + (value / 1e6).toFixed(1) + 'M', name];
               return [value, name];
             }} />
-            <Legend onClick={legendClick} />
-            <Scatter name="ARR vs 28d spend" data={corrPoints} fill="#e74c3c" />
+            <Legend onClick={legendClick} formatter={legendFormatter} />
+            <Scatter name="ARR vs 28d spend" data={corrPoints} fill="#e74c3c" onClick={(e) => handlePointClick(e)} />
             <Line data={trend} dataKey="trend" stroke="#8884d8" dot={false} legendType="none" strokeDasharray="5 5" />
           </ScatterChart>
         </ResponsiveContainer>
       ) : tab === 'consolidated' ? (
         <ResponsiveContainer width="100%" height={440}>
-          <BarChart data={consolidatedData} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
+          <ComposedChart data={consolidatedData} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="date" minTickGap={40} />
             <YAxis tickFormatter={v => '$' + (v / 1e6).toFixed(1) + 'M'} />
             <Tooltip formatter={(value) => value != null ? `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'} />
-            <Legend onClick={legendClick} />
-            {visible.anthropic && <Bar dataKey="anthropic" name="Anthropic" stackId="a" fill="#e74c3c" />}
-            {visible.openai && <Bar dataKey="openai" name="OpenAI" stackId="a" fill="#3498db" />}
-            {visible.trailing28_total && <Line type="monotone" dataKey="trailing28_total" name="28-day trailing total" stroke="#f39c12" dot={false} />}
-          </BarChart>
+            <Legend onClick={legendClick} formatter={legendFormatter} />
+            <Bar dataKey="anthropic" name="Anthropic" stackId="a" fill="#e74c3c" fillOpacity={visible.anthropic ? 1 : 0.2} />
+            <Bar dataKey="openai" name="OpenAI" stackId="a" fill="#3498db" fillOpacity={visible.openai ? 1 : 0.2} />
+            <Line type="monotone" dataKey="trailing28_total" name="28-day trailing total" stroke="#f39c12" strokeOpacity={visible.trailing28_total ? 1 : 0.25} dot={false} />
+            <Line type="monotone" dataKey="trailing28_anthropic" name="28-day Anthropic" stroke="#c0392b" strokeOpacity={visible.trailing28_anthropic ? 1 : 0.25} dot={false} strokeDasharray="4 2" />
+            <Line type="monotone" dataKey="trailing28_openai" name="28-day OpenAI" stroke="#2980b9" strokeOpacity={visible.trailing28_openai ? 1 : 0.25} dot={false} strokeDasharray="4 2" />
+          </ComposedChart>
         </ResponsiveContainer>
       ) : (
         <ResponsiveContainer width="100%" height={440}>
@@ -296,12 +329,12 @@ export default function Dashboard() {
                 <YAxis yAxisId="left" tickFormatter={v => (v / 1e12).toFixed(1) + 'T'} />
                 {showPrice && <YAxis yAxisId="right" orientation="right" domain={['auto', 'auto']} tickFormatter={v => '$' + Number(v).toFixed(2)} />}
                 <Tooltip />
-                <Legend onClick={legendClick} />
-                {visible.tokens && <Line yAxisId="left" type="monotone" dataKey="tokens" name="Daily tokens" stroke="#8884d8" dot={false} />}
-                {visible.trailing7 && <Line yAxisId="left" type="monotone" dataKey="trailing7" name="7-day trailing" stroke="#82ca9d" dot={false} />}
-                {visible.trailing28 && <Line yAxisId="left" type="monotone" dataKey="trailing28" name="28-day trailing" stroke="#ffc658" dot={false} />}
-                {showPrice && visible.avg_input && <Line yAxisId="right" type="monotone" dataKey="avg_input" name="Avg input $/M" stroke="#ff7300" dot={false} connectNulls />}
-                {showPrice && visible.avg_output && <Line yAxisId="right" type="monotone" dataKey="avg_output" name="Avg output $/M" stroke="#d45087" dot={false} connectNulls />}
+                <Legend onClick={legendClick} formatter={legendFormatter} />
+                <Line yAxisId="left" type="monotone" dataKey="tokens" name="Daily tokens" stroke="#8884d8" strokeOpacity={visible.tokens ? 1 : 0.2} dot={false} />
+                <Line yAxisId="left" type="monotone" dataKey="trailing7" name="7-day trailing" stroke="#82ca9d" strokeOpacity={visible.trailing7 ? 1 : 0.2} dot={false} />
+                <Line yAxisId="left" type="monotone" dataKey="trailing28" name="28-day trailing" stroke="#ffc658" strokeOpacity={visible.trailing28 ? 1 : 0.2} dot={false} />
+                {showPrice && <Line yAxisId="right" type="monotone" dataKey="avg_input" name="Avg input $/M" stroke="#ff7300" strokeOpacity={visible.avg_input ? 1 : 0.2} dot={false} connectNulls />}
+                {showPrice && <Line yAxisId="right" type="monotone" dataKey="avg_output" name="Avg output $/M" stroke="#d45087" strokeOpacity={visible.avg_output ? 1 : 0.2} dot={false} connectNulls />}
               </>
             ) : (
               <>
@@ -311,10 +344,10 @@ export default function Dashboard() {
                   if (name === 'Reported ARR') return ['$' + (value / 1e9).toFixed(1) + 'B', name];
                   return [value != null ? `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—', name];
                 }} />
-                <Legend onClick={legendClick} />
-                {visible.spend && <Line yAxisId="left" type="monotone" dataKey="spend" name="Estimated daily spend" stroke="#8884d8" dot={false} connectNulls />}
-                {visible.trailing28_spend && <Line yAxisId="left" type="monotone" dataKey="trailing28_spend" name="28-day trailing spend" stroke="#ffc658" dot={false} connectNulls />}
-                {visible.arr && <Bar yAxisId="right" dataKey="arr" name="Reported ARR" fill="#e74c3c" barSize={12} />}
+                <Legend onClick={legendClick} formatter={legendFormatter} />
+                <Line yAxisId="left" type="monotone" dataKey="spend" name="Estimated daily spend" stroke="#8884d8" strokeOpacity={visible.spend ? 1 : 0.2} dot={false} connectNulls />
+                <Line yAxisId="left" type="monotone" dataKey="trailing28_spend" name="28-day trailing spend" stroke="#ffc658" strokeOpacity={visible.trailing28_spend ? 1 : 0.2} dot={false} connectNulls />
+                <Bar yAxisId="right" dataKey="arr" name="Reported ARR" fill="#e74c3c" fillOpacity={visible.arr ? 1 : 0.2} barSize={12} />
               </>
             )}
           </ComposedChart>
@@ -322,7 +355,7 @@ export default function Dashboard() {
       )}
 
       <p style={{ fontSize: 13, color: '#666', marginTop: 8 }}>
-        Click any legend item to turn that series on or off. The chart rescales automatically.
+        Click any legend item to turn that series on or off (inactive items turn light gray). On the Correlation tab, click any dot to remove it.
       </p>
     </div>
   );
