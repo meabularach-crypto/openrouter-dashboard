@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  ScatterChart, Scatter, ZAxis,
+  ScatterChart, Scatter, ZAxis, BarChart,
 } from 'recharts';
 
 const ARR_POINTS = {
@@ -88,6 +88,7 @@ export default function Dashboard() {
   const [showPrice, setShowPrice] = useState(false);
   const [data, setData] = useState([]);
   const [consolidatedData, setConsolidatedData] = useState([]);
+  const [modelData, setModelData] = useState([]);
   const [hiddenPoints, setHiddenPoints] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -108,7 +109,13 @@ export default function Dashboard() {
       setLoading(true);
       setError(null);
       try {
-        if (tab === 'consolidated') {
+        if (tab === 'models') {
+          const res = await fetch(`/api/models?provider=${provider}&days=${days}`);
+          const json = await res.json();
+          if (cancelled) return;
+          if (json.error) throw new Error(json.error);
+          setModelData(json.models || []);
+        } else if (tab === 'consolidated') {
           const [anthVol, anthPrice, oaiVol, oaiPrice] = await Promise.all([
             fetch(`/api/data?provider=anthropic&days=${days}`).then(r => r.json()),
             fetch(`/api/prices?provider=anthropic&days=${days}`).then(r => r.json()),
@@ -187,6 +194,7 @@ export default function Dashboard() {
             t28.push(q.length === 28 ? sum / 28 : null);
           }
           merged.forEach((d, i) => { d.trailing28_spend = t28[i]; });
+
           setData(merged);
         }
       } catch (e) {
@@ -228,6 +236,7 @@ export default function Dashboard() {
   const handleDownload = () => {
     if (tab === 'corr') downloadCSV(`correlation_${provider}.csv`, corrPoints);
     else if (tab === 'consolidated') downloadCSV(`consolidated_spend_${days}d.csv`, consolidatedData);
+    else if (tab === 'models') downloadCSV(`model_mix_${provider}_${days}d.csv`, modelData);
     else downloadCSV(`${tab}_${provider}_${days}d.csv`, data);
   };
 
@@ -270,6 +279,7 @@ export default function Dashboard() {
         <button style={tabStyle(tab === 'spend')} onClick={() => setTab('spend')}>Estimated Spend</button>
         <button style={tabStyle(tab === 'corr')} onClick={() => setTab('corr')}>Correlation</button>
         <button style={tabStyle(tab === 'consolidated')} onClick={() => setTab('consolidated')}>Consolidated Spend</button>
+        <button style={tabStyle(tab === 'models')} onClick={() => setTab('models')}>Model Mix</button>
         <button onClick={handleDownload} style={{ marginLeft: 'auto', padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
           Download CSV
         </button>
@@ -311,7 +321,17 @@ export default function Dashboard() {
         </div>
       )}
 
-      {tab === 'corr' ? (
+      {tab === 'models' ? (
+        <ResponsiveContainer width="100%" height={520}>
+          <BarChart data={modelData} layout="vertical" margin={{ top: 10, right: 30, left: 120, bottom: 10 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis type="number" tickFormatter={v => (v / 1e12).toFixed(1) + 'T'} />
+            <YAxis type="category" dataKey="model" width={110} />
+            <Tooltip formatter={(v) => Number(v).toLocaleString() + ' tokens'} />
+            <Bar dataKey="tokens" fill={provider === 'anthropic' ? '#e74c3c' : '#3498db'} />
+          </BarChart>
+        </ResponsiveContainer>
+      ) : tab === 'corr' ? (
         <ResponsiveContainer width="100%" height={440}>
           <ScatterChart margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
             <CartesianGrid strokeDasharray="3 3" />
@@ -379,7 +399,7 @@ export default function Dashboard() {
       )}
 
       <p style={{ fontSize: 13, color: '#666', marginTop: 8 }}>
-        Click any legend item to turn that series on or off. Inactive labels turn light gray; the data is fully removed so the axis rescales. On the Correlation tab, click any dot to remove it.
+        Click any legend item to turn that series on or off. Inactive labels turn light gray; the data is fully removed so the axis rescales. On the Correlation tab, click any dot to remove it. Model Mix shows the top models by total tokens over the selected lookback.
       </p>
     </div>
   );
