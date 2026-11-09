@@ -35,24 +35,48 @@ export async function GET(request) {
     const rows = json.data || [];
 
     const prefix = provider === 'openai' ? 'openai/' : 'anthropic/';
-    const totals = {};
+    const byDate = {};
+    const modelTotals = {};
 
     for (const row of rows) {
       const slug = row.model_permaslug || '';
       if (!slug.startsWith(prefix) || slug === 'other') continue;
       const tokens = Number(row.total_tokens) || 0;
       if (!tokens) continue;
-      totals[slug] = (totals[slug] || 0) + tokens;
+
+      const model = slug.replace(prefix, '').replace(/:[^/]+$/, ''); // strip :variant if present
+      const date = row.date;
+
+      if (!byDate[date]) byDate[date] = { date };
+      byDate[date][model] = (byDate[date][model] || 0) + tokens;
+      modelTotals[model] = (modelTotals[model] || 0) + tokens;
     }
 
-    const models = Object.entries(totals)
-      .map(([model, tokens]) => ({
-        model: model.replace(prefix, ''),
-        tokens,
-        tokensM: Math.round(tokens / 1e6),
-      }))
-      .sort((a, b) => b.tokens - a.tokens)
-      .slice(0, 15);
+    // Keep top models by total volume so the chart stays readable
+    const topModels = Object.entries(modelTotals)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([m]) => m);
+
+    const daily = Object.values(byDate)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map(d => {
+        const out = { date: d.date };
+        let other = 0;
+        for (const [model, tokens] of Object.entries(d)) {
+          if (model === 'date') continue;
+          if (topModels.includes(model)) {
+            out[model] = tokens;
+          } else {
+            other += tokens;
+          }
+        }
+        if (other > 0) out.other = other;
+        return out;
+      });
+
+    const models = [...topModels];
+    if (daily.some(d => d.other)) models.push('other');
 
     return NextResponse.json({
       provider,
@@ -60,6 +84,7 @@ export async function GET(request) {
       start_date: startStr,
       end_date: endStr,
       models,
+      daily,
     });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
