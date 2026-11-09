@@ -28,6 +28,11 @@ const ARR_POINTS = {
   ],
 };
 
+const MODEL_COLORS = [
+  '#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6',
+  '#1abc9c', '#e67e22', '#34495e', '#95a5a6', '#d35400',
+];
+
 function nearestSpend(data, targetDate) {
   if (!data.length) return null;
   let best = null;
@@ -84,11 +89,12 @@ function downloadCSV(filename, rows) {
 export default function Dashboard() {
   const [tab, setTab] = useState('volume');
   const [provider, setProvider] = useState('anthropic');
-  const [days, setDays] = useState(365);
+  const [days, setDays] = useState(90);
   const [showPrice, setShowPrice] = useState(false);
   const [data, setData] = useState([]);
   const [consolidatedData, setConsolidatedData] = useState([]);
-  const [modelData, setModelData] = useState([]);
+  const [modelDaily, setModelDaily] = useState([]);
+  const [modelKeys, setModelKeys] = useState([]);
   const [hiddenPoints, setHiddenPoints] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -114,7 +120,8 @@ export default function Dashboard() {
           const json = await res.json();
           if (cancelled) return;
           if (json.error) throw new Error(json.error);
-          setModelData(json.models || []);
+          setModelDaily(json.daily || []);
+          setModelKeys(json.models || []);
         } else if (tab === 'consolidated') {
           const [anthVol, anthPrice, oaiVol, oaiPrice] = await Promise.all([
             fetch(`/api/data?provider=anthropic&days=${days}`).then(r => r.json()),
@@ -236,7 +243,7 @@ export default function Dashboard() {
   const handleDownload = () => {
     if (tab === 'corr') downloadCSV(`correlation_${provider}.csv`, corrPoints);
     else if (tab === 'consolidated') downloadCSV(`consolidated_spend_${days}d.csv`, consolidatedData);
-    else if (tab === 'models') downloadCSV(`model_mix_${provider}_${days}d.csv`, modelData);
+    else if (tab === 'models') downloadCSV(`model_mix_${provider}_${days}d.csv`, modelDaily);
     else downloadCSV(`${tab}_${provider}_${days}d.csv`, data);
   };
 
@@ -323,12 +330,21 @@ export default function Dashboard() {
 
       {tab === 'models' ? (
         <ResponsiveContainer width="100%" height={520}>
-          <BarChart data={modelData} layout="vertical" margin={{ top: 10, right: 30, left: 120, bottom: 10 }}>
+          <BarChart data={modelDaily} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis type="number" tickFormatter={v => (v / 1e12).toFixed(1) + 'T'} />
-            <YAxis type="category" dataKey="model" width={110} />
-            <Tooltip formatter={(v) => Number(v).toLocaleString() + ' tokens'} />
-            <Bar dataKey="tokens" fill={provider === 'anthropic' ? '#e74c3c' : '#3498db'} />
+            <XAxis dataKey="date" minTickGap={30} angle={-35} textAnchor="end" height={60} />
+            <YAxis tickFormatter={v => (v / 1e12).toFixed(1) + 'T'} />
+            <Tooltip formatter={(value) => value != null ? Number(value).toLocaleString() + ' tokens' : '—'} />
+            <Legend />
+            {modelKeys.map((model, i) => (
+              <Bar
+                key={model}
+                dataKey={model}
+                stackId="a"
+                fill={MODEL_COLORS[i % MODEL_COLORS.length]}
+                name={model}
+              />
+            ))}
           </BarChart>
         </ResponsiveContainer>
       ) : tab === 'corr' ? (
@@ -399,7 +415,7 @@ export default function Dashboard() {
       )}
 
       <p style={{ fontSize: 13, color: '#666', marginTop: 8 }}>
-        Click any legend item to turn that series on or off. Inactive labels turn light gray; the data is fully removed so the axis rescales. On the Correlation tab, click any dot to remove it. Model Mix shows the top models by total tokens over the selected lookback.
+        Click any legend item to turn that series on or off. Inactive labels turn light gray; the data is fully removed so the axis rescales. On the Correlation tab, click any dot to remove it. Model Mix shows daily stacked bars of the top models (by total tokens) for the selected provider.
       </p>
     </div>
   );
