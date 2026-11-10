@@ -146,7 +146,7 @@ export default function Dashboard() {
             return next;
           });
         } else if (tab === 'categories') {
-          const res = await fetch(`/api/categories?days=${days}`);
+          const res = await fetch(`/api/categories?days=${days}&provider=${categoryProvider}`);
           const json = await res.json();
           if (cancelled) return;
           if (json.error) throw new Error(json.error);
@@ -247,7 +247,7 @@ export default function Dashboard() {
     }
     load();
     return () => { cancelled = true; };
-  }, [provider, days, tab]);
+  }, [provider, days, tab, categoryProvider]);
 
   if (error) return <div style={{ color: 'red', padding: 20 }}>Error: {error}</div>;
   if (loading) return <div style={{ padding: 20 }}>Loading…</div>;
@@ -354,7 +354,16 @@ export default function Dashboard() {
       )}
 
       {(tab === 'consolidated' || tab === 'categories') && (
-        <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+          {tab === 'categories' && (
+            <label>View:&nbsp;
+              <select value={categoryProvider} onChange={e => setCategoryProvider(e.target.value)}>
+                <option value="total">Total</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="openai">OpenAI</option>
+              </select>
+            </label>
+          )}
           <label>Lookback:&nbsp;
             <select value={days} onChange={e => setDays(Number(e.target.value))}>
               <option value={90}>90 days</option>
