@@ -139,6 +139,12 @@ export default function Dashboard() {
           if (json.error) throw new Error(json.error);
           setModelDaily(json.daily || []);
           setModelKeys(json.models || []);
+          // ensure new model keys start visible
+          setVisible(prev => {
+            const next = { ...prev };
+            (json.models || []).forEach(m => { if (next[m] === undefined) next[m] = true; });
+            return next;
+          });
         } else if (tab === 'categories') {
           const res = await fetch(`/api/categories?days=${days}`);
           const json = await res.json();
@@ -146,6 +152,11 @@ export default function Dashboard() {
           if (json.error) throw new Error(json.error);
           setCategoryWeekly(json.weekly || []);
           setCategoryKeys(json.categories || []);
+          setVisible(prev => {
+            const next = { ...prev };
+            (json.categories || []).forEach(c => { if (next[c] === undefined) next[c] = true; });
+            return next;
+          });
         } else if (tab === 'consolidated') {
           const [anthVol, anthPrice, oaiVol, oaiPrice] = await Promise.all([
             fetch(`/api/data?provider=anthropic&days=${days}`).then(r => r.json()),
@@ -361,15 +372,17 @@ export default function Dashboard() {
             <XAxis dataKey="date" minTickGap={30} angle={-35} textAnchor="end" height={60} />
             <YAxis tickFormatter={v => (v / 1e12).toFixed(1) + 'T'} />
             <Tooltip formatter={(value) => value != null ? Number(value).toLocaleString() + ' tokens' : '—'} />
-            <Legend />
+            <Legend onClick={legendClick} formatter={legendFormatter} />
             {categoryKeys.map((cat) => (
-              <Bar
-                key={cat}
-                dataKey={cat}
-                stackId="a"
-                fill={CATEGORY_COLORS[cat] || '#888'}
-                name={cat}
-              />
+              visible[cat] !== false && (
+                <Bar
+                  key={cat}
+                  dataKey={cat}
+                  stackId="a"
+                  fill={CATEGORY_COLORS[cat] || '#888'}
+                  name={cat}
+                />
+              )
             ))}
           </BarChart>
         </ResponsiveContainer>
@@ -380,15 +393,17 @@ export default function Dashboard() {
             <XAxis dataKey="date" minTickGap={30} angle={-35} textAnchor="end" height={60} />
             <YAxis tickFormatter={v => (v / 1e12).toFixed(1) + 'T'} />
             <Tooltip formatter={(value) => value != null ? Number(value).toLocaleString() + ' tokens' : '—'} />
-            <Legend />
+            <Legend onClick={legendClick} formatter={legendFormatter} />
             {modelKeys.map((model, i) => (
-              <Bar
-                key={model}
-                dataKey={model}
-                stackId="a"
-                fill={MODEL_COLORS[i % MODEL_COLORS.length]}
-                name={model}
-              />
+              visible[model] !== false && (
+                <Bar
+                  key={model}
+                  dataKey={model}
+                  stackId="a"
+                  fill={MODEL_COLORS[i % MODEL_COLORS.length]}
+                  name={model}
+                />
+              )
             ))}
           </BarChart>
         </ResponsiveContainer>
