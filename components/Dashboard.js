@@ -372,7 +372,16 @@ export default function Dashboard() {
             <XAxis dataKey="date" minTickGap={30} angle={-35} textAnchor="end" height={60} />
             <YAxis tickFormatter={v => (v / 1e12).toFixed(1) + 'T'} />
             <Tooltip formatter={(value) => value != null ? Number(value).toLocaleString() + ' tokens' : '—'} />
-            <Legend onClick={legendClick} formatter={legendFormatter} />
+            <Legend
+              onClick={legendClick}
+              formatter={legendFormatter}
+              payload={categoryKeys.map(cat => ({
+                value: cat,
+                dataKey: cat,
+                color: CATEGORY_COLORS[cat] || '#888',
+                type: 'rect',
+              }))}
+            />
             {categoryKeys.map((cat) => (
               visible[cat] !== false && (
                 <Bar
@@ -393,7 +402,16 @@ export default function Dashboard() {
             <XAxis dataKey="date" minTickGap={30} angle={-35} textAnchor="end" height={60} />
             <YAxis tickFormatter={v => (v / 1e12).toFixed(1) + 'T'} />
             <Tooltip formatter={(value) => value != null ? Number(value).toLocaleString() + ' tokens' : '—'} />
-            <Legend onClick={legendClick} formatter={legendFormatter} />
+            <Legend
+              onClick={legendClick}
+              formatter={legendFormatter}
+              payload={modelKeys.map((model, i) => ({
+                value: model,
+                dataKey: model,
+                color: MODEL_COLORS[i % MODEL_COLORS.length],
+                type: 'rect',
+              }))}
+            />
             {modelKeys.map((model, i) => (
               visible[model] !== false && (
                 <Bar
