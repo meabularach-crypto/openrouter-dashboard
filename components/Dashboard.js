@@ -104,6 +104,7 @@ function downloadCSV(filename, rows) {
 export default function Dashboard() {
   const [tab, setTab] = useState('volume');
   const [provider, setProvider] = useState('anthropic');
+  const [categoryProvider, setCategoryProvider] = useState('total');
   const [days, setDays] = useState(90);
   const [showPrice, setShowPrice] = useState(false);
   const [data, setData] = useState([]);
