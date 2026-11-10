@@ -31,7 +31,22 @@ const ARR_POINTS = {
 const MODEL_COLORS = [
   '#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6',
   '#1abc9c', '#e67e22', '#34495e', '#95a5a6', '#d35400',
+  '#16a085', '#8e44ad',
 ];
+
+const CATEGORY_COLORS = {
+  programming: '#3498db',
+  technology: '#2ecc71',
+  roleplay: '#e74c3c',
+  marketing: '#f39c12',
+  science: '#9b59b6',
+  translation: '#1abc9c',
+  legal: '#e67e22',
+  finance: '#27ae60',
+  health: '#e84393',
+  academia: '#8e44ad',
+  trivia: '#95a5a6',
+};
 
 function nearestSpend(data, targetDate) {
   if (!data.length) return null;
@@ -95,6 +110,8 @@ export default function Dashboard() {
   const [consolidatedData, setConsolidatedData] = useState([]);
   const [modelDaily, setModelDaily] = useState([]);
   const [modelKeys, setModelKeys] = useState([]);
+  const [categoryWeekly, setCategoryWeekly] = useState([]);
+  const [categoryKeys, setCategoryKeys] = useState([]);
   const [hiddenPoints, setHiddenPoints] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -122,6 +139,13 @@ export default function Dashboard() {
           if (json.error) throw new Error(json.error);
           setModelDaily(json.daily || []);
           setModelKeys(json.models || []);
+        } else if (tab === 'categories') {
+          const res = await fetch(`/api/categories?days=${days}`);
+          const json = await res.json();
+          if (cancelled) return;
+          if (json.error) throw new Error(json.error);
+          setCategoryWeekly(json.weekly || []);
+          setCategoryKeys(json.categories || []);
         } else if (tab === 'consolidated') {
           const [anthVol, anthPrice, oaiVol, oaiPrice] = await Promise.all([
             fetch(`/api/data?provider=anthropic&days=${days}`).then(r => r.json()),
@@ -244,6 +268,7 @@ export default function Dashboard() {
     if (tab === 'corr') downloadCSV(`correlation_${provider}.csv`, corrPoints);
     else if (tab === 'consolidated') downloadCSV(`consolidated_spend_${days}d.csv`, consolidatedData);
     else if (tab === 'models') downloadCSV(`model_mix_${provider}_${days}d.csv`, modelDaily);
+    else if (tab === 'categories') downloadCSV(`categories_${days}d.csv`, categoryWeekly);
     else downloadCSV(`${tab}_${provider}_${days}d.csv`, data);
   };
 
@@ -287,12 +312,13 @@ export default function Dashboard() {
         <button style={tabStyle(tab === 'corr')} onClick={() => setTab('corr')}>Correlation</button>
         <button style={tabStyle(tab === 'consolidated')} onClick={() => setTab('consolidated')}>Consolidated Spend</button>
         <button style={tabStyle(tab === 'models')} onClick={() => setTab('models')}>Model Mix</button>
+        <button style={tabStyle(tab === 'categories')} onClick={() => setTab('categories')}>Task Categories</button>
         <button onClick={handleDownload} style={{ marginLeft: 'auto', padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
           Download CSV
         </button>
       </div>
 
-      {tab !== 'consolidated' && (
+      {tab !== 'consolidated' && tab !== 'categories' && (
         <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
           <label>Provider:&nbsp;
             <select value={provider} onChange={e => setProvider(e.target.value)}>
@@ -316,7 +342,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {tab === 'consolidated' && (
+      {(tab === 'consolidated' || tab === 'categories') && (
         <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
           <label>Lookback:&nbsp;
             <select value={days} onChange={e => setDays(Number(e.target.value))}>
@@ -328,7 +354,26 @@ export default function Dashboard() {
         </div>
       )}
 
-      {tab === 'models' ? (
+      {tab === 'categories' ? (
+        <ResponsiveContainer width="100%" height={520}>
+          <BarChart data={categoryWeekly} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="date" minTickGap={30} angle={-35} textAnchor="end" height={60} />
+            <YAxis tickFormatter={v => (v / 1e12).toFixed(1) + 'T'} />
+            <Tooltip formatter={(value) => value != null ? Number(value).toLocaleString() + ' tokens' : '—'} />
+            <Legend />
+            {categoryKeys.map((cat) => (
+              <Bar
+                key={cat}
+                dataKey={cat}
+                stackId="a"
+                fill={CATEGORY_COLORS[cat] || '#888'}
+                name={cat}
+              />
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      ) : tab === 'models' ? (
         <ResponsiveContainer width="100%" height={520}>
           <BarChart data={modelDaily} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
             <CartesianGrid strokeDasharray="3 3" />
@@ -415,7 +460,7 @@ export default function Dashboard() {
       )}
 
       <p style={{ fontSize: 13, color: '#666', marginTop: 8 }}>
-        Click any legend item to turn that series on or off. Inactive labels turn light gray; the data is fully removed so the axis rescales. On the Correlation tab, click any dot to remove it. Model Mix shows daily stacked bars of the top models (by total tokens) for the selected provider.
+        Click any legend item to turn that series on or off. Inactive labels turn light gray; the data is fully removed so the axis rescales. On the Correlation tab, click any dot to remove it. Model Mix shows daily stacked bars of top models. Task Categories shows weekly stacked estimates by use-case (programming, finance, health, etc.) from OpenRouter’s sampled category data.
       </p>
     </div>
   );
