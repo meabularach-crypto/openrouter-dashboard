@@ -17,6 +17,8 @@ const ARR_POINTS = {
     { date: '2026-04-06', arr: 30e9 },
     { date: '2026-05-28', arr: 47e9 },
     { date: '2026-07-31', arr: 65e9 },
+    { date: '2026-09-30', arr: 71e9 },
+    { date: '2026-10-31', arr: 81e9 },
   ],
   openai: [
     { date: '2024-12-31', arr: 6e9 },
