@@ -144,6 +144,7 @@ export default function Dashboard() {
   const [consolidatedData, setConsolidatedData] = useState([]);
   const [modelDaily, setModelDaily] = useState([]);
   const [modelKeys, setModelKeys] = useState([]);
+  const [modelDebug, setModelDebug] = useState(null);
   const [categoryWeekly, setCategoryWeekly] = useState([]);
   const [categoryKeys, setCategoryKeys] = useState([]);
   const [providerDaily, setProviderDaily] = useState([]);
@@ -179,6 +180,7 @@ export default function Dashboard() {
           if (json.error) throw new Error(json.error);
           setModelDaily(json.daily || []);
           setModelKeys(json.models || []);
+          setModelDebug(json.sample_anthropic_slugs || null);
           // ensure new model keys start visible
           setVisible(prev => {
             const next = { ...prev };
@@ -535,7 +537,16 @@ export default function Dashboard() {
           </BarChart>
         </ResponsiveContainer>
       ) : tab === 'models' ? (
-        modelDaily.length === 0 ? <div style={{ padding: 20 }}>No model data</div> :
+        modelDaily.length === 0 ? (
+          <div style={{ padding: 20 }}>
+            No model data
+            {modelDebug && (
+              <pre style={{ fontSize: 12, marginTop: 8, whiteSpace: 'pre-wrap' }}>
+                Sample Anthropic slugs: {JSON.stringify(modelDebug, null, 2)}
+              </pre>
+            )}
+          </div>
+        ) :
         <ResponsiveContainer width="100%" height={520}>
           <BarChart data={showPercent ? toPercent(modelDaily, modelKeys) : modelDaily} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
             <CartesianGrid strokeDasharray="3 3" />
