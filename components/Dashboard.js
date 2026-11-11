@@ -152,6 +152,7 @@ export default function Dashboard() {
   const [modelByProviderDaily, setModelByProviderDaily] = useState([]);
   const [modelByProviderKeys, setModelByProviderKeys] = useState([]);
   const [modelByProvider, setModelByProvider] = useState('deepseek');
+  const [availableProviders, setAvailableProviders] = useState([]);
   const [showPercent, setShowPercent] = useState(false);
   const [hiddenPoints, setHiddenPoints] = useState(new Set());
   const [loading, setLoading] = useState(true);
@@ -212,6 +213,18 @@ export default function Dashboard() {
             return next;
           });
         } else if (tab === 'models-by-provider') {
+          // Load top 20 providers for the dropdown if not already loaded
+          if (availableProviders.length === 0) {
+            const provRes = await fetch(`/api/providers?days=${days}&top=20`);
+            const provJson = await provRes.json();
+            if (!provJson.error && provJson.providers) {
+              const list = provJson.providers.filter(p => p !== 'other');
+              setAvailableProviders(list);
+              if (list.length && !list.includes(modelByProvider)) {
+                setModelByProvider(list[0]);
+              }
+            }
+          }
           const res = await fetch(`/api/models-by-provider?provider=${modelByProvider}&days=${days}&top=8`);
           const json = await res.json();
           if (cancelled) return;
@@ -443,20 +456,14 @@ export default function Dashboard() {
           {tab === 'models-by-provider' && (
             <label>Provider:&nbsp;
               <select value={modelByProvider} onChange={e => setModelByProvider(e.target.value)}>
-                <option value="deepseek">DeepSeek</option>
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="google">Google</option>
-                <option value="z-ai">Z.ai</option>
-                <option value="tencent">Tencent</option>
-                <option value="moonshotai">Moonshot</option>
-                <option value="minimax">MiniMax</option>
-                <option value="nvidia">NVIDIA</option>
-                <option value="xiaomi">Xiaomi</option>
-                <option value="stepfun">StepFun</option>
-                <option value="qwen">Qwen</option>
-                <option value="meta">Meta</option>
-                <option value="mistralai">Mistral</option>
+                {availableProviders.length === 0 ? (
+                  <option value="deepseek">Loading providers…</option>
+                ) : (
+                  availableProviders.map(p => (
+                    <option key={p} value={p}>{p === 'x-ai' ? 'xAI / SpaceXAI' : p}</option>
+                  ))
+                )}
+              </select>
               </select>
             </label>
           )}
