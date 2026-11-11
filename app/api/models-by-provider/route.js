@@ -9,6 +9,9 @@ const FORCE_INCLUDE = [
   'claude-fable-5.1',
   'claude-mythos-5.1',
 ];
+
+// Known provider prefixes we support in the dropdown
+const SUPPORTED = [
   'anthropic', 'openai', 'deepseek', 'google', 'meta', 'z-ai', 'tencent',
   'moonshotai', 'minimax', 'nvidia', 'xiaomi', 'stepfun', 'qwen', 'mistralai',
 ];
