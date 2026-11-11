@@ -48,6 +48,7 @@ const CATEGORY_COLORS = {
   health: '#e84393',
   academia: '#8e44ad',
   trivia: '#95a5a6',
+  unclassified: '#7f8c8d',
 };
 
 function nearestSpend(data, targetDate) {
