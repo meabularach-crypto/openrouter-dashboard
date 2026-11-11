@@ -36,7 +36,23 @@ const MODEL_COLORS = [
   '#16a085', '#8e44ad',
 ];
 
-const CATEGORY_COLORS = {
+const PROVIDER_COLORS = {
+  deepseek: '#e74c3c',
+  openai: '#3498db',
+  anthropic: '#9b59b6',
+  google: '#f39c12',
+  meta: '#2ecc71',
+  'z-ai': '#1abc9c',
+  tencent: '#e67e22',
+  moonshotai: '#34495e',
+  minimax: '#d35400',
+  nvidia: '#16a085',
+  xiaomi: '#8e44ad',
+  stepfun: '#27ae60',
+  qwen: '#2980b9',
+  mistralai: '#c0392b',
+  other: '#95a5a6',
+};
   programming: '#3498db',
   technology: '#2ecc71',
   roleplay: '#e74c3c',
@@ -116,6 +132,8 @@ export default function Dashboard() {
   const [modelKeys, setModelKeys] = useState([]);
   const [categoryWeekly, setCategoryWeekly] = useState([]);
   const [categoryKeys, setCategoryKeys] = useState([]);
+  const [providerDaily, setProviderDaily] = useState([]);
+  const [providerKeys, setProviderKeys] = useState([]);
   const [hiddenPoints, setHiddenPoints] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -159,6 +177,18 @@ export default function Dashboard() {
           setVisible(prev => {
             const next = { ...prev };
             (json.categories || []).forEach(c => { if (next[c] === undefined) next[c] = true; });
+            return next;
+          });
+        } else if (tab === 'providers') {
+          const res = await fetch(`/api/providers?days=${days}&top=10`);
+          const json = await res.json();
+          if (cancelled) return;
+          if (json.error) throw new Error(json.error);
+          setProviderDaily(json.daily || []);
+          setProviderKeys(json.providers || []);
+          setVisible(prev => {
+            const next = { ...prev };
+            (json.providers || []).forEach(p => { if (next[p] === undefined) next[p] = true; });
             return next;
           });
         } else if (tab === 'consolidated') {
@@ -284,6 +314,7 @@ export default function Dashboard() {
     else if (tab === 'consolidated') downloadCSV(`consolidated_spend_${days}d.csv`, consolidatedData);
     else if (tab === 'models') downloadCSV(`model_mix_${provider}_${days}d.csv`, modelDaily);
     else if (tab === 'categories') downloadCSV(`categories_${days}d.csv`, categoryWeekly);
+    else if (tab === 'providers') downloadCSV(`providers_${days}d.csv`, providerDaily);
     else downloadCSV(`${tab}_${provider}_${days}d.csv`, data);
   };
 
@@ -328,12 +359,13 @@ export default function Dashboard() {
         <button style={tabStyle(tab === 'consolidated')} onClick={() => setTab('consolidated')}>Consolidated Spend</button>
         <button style={tabStyle(tab === 'models')} onClick={() => setTab('models')}>Model Mix</button>
         <button style={tabStyle(tab === 'categories')} onClick={() => setTab('categories')}>Task Categories</button>
+        <button style={tabStyle(tab === 'providers')} onClick={() => setTab('providers')}>Providers</button>
         <button onClick={handleDownload} style={{ marginLeft: 'auto', padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
           Download CSV
         </button>
       </div>
 
-      {tab !== 'consolidated' && tab !== 'categories' && (
+      {tab !== 'consolidated' && tab !== 'categories' && tab !== 'providers' && (
         <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
           <label>Provider:&nbsp;
             <select value={provider} onChange={e => setProvider(e.target.value)}>
@@ -357,7 +389,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {(tab === 'consolidated' || tab === 'categories') && (
+      {(tab === 'consolidated' || tab === 'categories' || tab === 'providers') && (
         <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
           {tab === 'categories' && (
             <label>View:&nbsp;
@@ -403,6 +435,36 @@ export default function Dashboard() {
                   stackId="a"
                   fill={CATEGORY_COLORS[cat] || '#888'}
                   name={cat}
+                />
+              )
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      ) : tab === 'providers' ? (
+        <ResponsiveContainer width="100%" height={520}>
+          <BarChart data={providerDaily} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="date" minTickGap={30} angle={-35} textAnchor="end" height={60} />
+            <YAxis tickFormatter={v => (v / 1e12).toFixed(1) + 'T'} />
+            <Tooltip formatter={(value) => value != null ? Number(value).toLocaleString() + ' tokens' : '—'} />
+            <Legend
+              onClick={legendClick}
+              formatter={legendFormatter}
+              payload={providerKeys.map(p => ({
+                value: p,
+                dataKey: p,
+                color: PROVIDER_COLORS[p] || '#888',
+                type: 'rect',
+              }))}
+            />
+            {providerKeys.map((p) => (
+              visible[p] !== false && (
+                <Bar
+                  key={p}
+                  dataKey={p}
+                  stackId="a"
+                  fill={PROVIDER_COLORS[p] || '#888'}
+                  name={p}
                 />
               )
             ))}
