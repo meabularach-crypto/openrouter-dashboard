@@ -53,6 +53,8 @@ const PROVIDER_COLORS = {
   mistralai: '#c0392b',
   other: '#95a5a6',
 };
+
+const CATEGORY_COLORS = {
   programming: '#3498db',
   technology: '#2ecc71',
   roleplay: '#e74c3c',
