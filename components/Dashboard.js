@@ -150,6 +150,7 @@ export default function Dashboard() {
   const [providerKeys, setProviderKeys] = useState([]);
   const [modelByProviderDaily, setModelByProviderDaily] = useState([]);
   const [modelByProviderKeys, setModelByProviderKeys] = useState([]);
+  const [modelByProvider, setModelByProvider] = useState('deepseek');
   const [showPercent, setShowPercent] = useState(false);
   const [hiddenPoints, setHiddenPoints] = useState(new Set());
   const [loading, setLoading] = useState(true);
