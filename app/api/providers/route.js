@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const days = Math.min(365, Math.max(28, parseInt(searchParams.get('days') || '90', 10)));
-  const topN = Math.min(15, Math.max(5, parseInt(searchParams.get('top') || '10', 10)));
+  const topN = Math.min(25, Math.max(5, parseInt(searchParams.get('top') || '10', 10)));
 
   const end = new Date();
   end.setUTCDate(end.getUTCDate() - 1);
