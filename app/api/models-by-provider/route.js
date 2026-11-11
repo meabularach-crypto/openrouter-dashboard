@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 
-// Known provider prefixes we support in the dropdown
-const SUPPORTED = [
+// Models we always want broken out as their own series (when present)
+const FORCE_INCLUDE = [
+  'claude-fable-5.2',
+  'claude-fable-5-2',
+  'claude-mythos-5.2',
+  'claude-mythos-5-2',
+];
   'anthropic', 'openai', 'deepseek', 'google', 'meta', 'z-ai', 'tencent',
   'moonshotai', 'minimax', 'nvidia', 'xiaomi', 'stepfun', 'qwen', 'mistralai',
 ];
@@ -53,6 +58,9 @@ export async function GET(request) {
 
       // Clean model name: strip provider prefix and :variant
       let model = slug.replace(prefix, '').replace(/:[^/]+$/, '');
+      // Collapse known Fable/Mythos 5.2 variants into a single label
+      if (model.includes('fable-5.2') || model.includes('fable-5-2')) model = 'claude-fable-5.2';
+      if (model.includes('mythos-5.2') || model.includes('mythos-5-2')) model = 'claude-mythos-5.2';
       const date = row.date;
 
       if (!byDate[date]) byDate[date] = { date };
@@ -60,10 +68,19 @@ export async function GET(request) {
       modelTotals[model] = (modelTotals[model] || 0) + tokens;
     }
 
-    const topModels = Object.entries(modelTotals)
+    let topModels = Object.entries(modelTotals)
       .sort((a, b) => b[1] - a[1])
       .slice(0, topN)
       .map(([m]) => m);
+
+    // Always force-include Fable 5.2 / Mythos 5.2 if they have any volume
+    for (const forced of FORCE_INCLUDE) {
+      const normalized = forced.includes('fable') ? 'claude-fable-5.2' : forced.includes('mythos') ? 'claude-mythos-5.2' : forced;
+      if (modelTotals[normalized] > 0 && !topModels.includes(normalized)) {
+        topModels.push(normalized);
+      }
+    }
+    topModels = [...new Set(topModels)];
 
     const daily = Object.values(byDate)
       .sort((a, b) => a.date.localeCompare(b.date))
