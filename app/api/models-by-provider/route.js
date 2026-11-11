@@ -6,6 +6,8 @@ const FORCE_INCLUDE = [
   'claude-fable-5-2',
   'claude-mythos-5.2',
   'claude-mythos-5-2',
+  'claude-fable-5.1',
+  'claude-mythos-5.1',
 ];
   'anthropic', 'openai', 'deepseek', 'google', 'meta', 'z-ai', 'tencent',
   'moonshotai', 'minimax', 'nvidia', 'xiaomi', 'stepfun', 'qwen', 'mistralai',
@@ -65,9 +67,9 @@ export async function GET(request) {
 
       // Clean model name: strip provider prefix and :variant
       let model = slug.replace(prefix, '').replace(/:[^/]+$/, '');
-      // Collapse known Fable/Mythos 5.2 variants into a single label
-      if (model.includes('fable-5.2') || model.includes('fable-5-2')) model = 'claude-fable-5.2';
-      if (model.includes('mythos-5.2') || model.includes('mythos-5-2')) model = 'claude-mythos-5.2';
+      // Collapse known Fable/Mythos 5.x variants into a single label
+      if (model.includes('fable') && (model.includes('5.2') || model.includes('5-2'))) model = 'claude-fable-5.2';
+      if (model.includes('mythos') && (model.includes('5.2') || model.includes('5-2'))) model = 'claude-mythos-5.2';
       const date = row.date;
 
       if (!byDate[date]) byDate[date] = { date };
