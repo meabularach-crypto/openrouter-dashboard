@@ -116,6 +116,8 @@ function toPercent(data, keys) {
     return out;
   });
 }
+
+function downloadCSV(filename, rows) {
   if (!rows.length) return;
   const headers = Object.keys(rows[0]);
   const csv = [
