@@ -46,6 +46,13 @@ export async function GET(request) {
     const json = await res.json();
     const rows = json.data || [];
 
+    const sampleSlugs = [...new Set(
+      rows
+        .filter(r => (r.model_permaslug || '').toLowerCase().startsWith(provider + '/'))
+        .map(r => r.model_permaslug)
+        .slice(0, 30)
+    )];
+
     const prefix = provider + '/';
     const byDate = {};
     const modelTotals = {};
@@ -110,6 +117,7 @@ export async function GET(request) {
       end_date: endStr,
       models,
       daily,
+      sample_slugs: sampleSlugs,
       supported: SUPPORTED,
     });
   } catch (e) {
