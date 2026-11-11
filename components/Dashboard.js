@@ -134,6 +134,9 @@ export default function Dashboard() {
   const [categoryKeys, setCategoryKeys] = useState([]);
   const [providerDaily, setProviderDaily] = useState([]);
   const [providerKeys, setProviderKeys] = useState([]);
+  const [modelByProviderDaily, setModelByProviderDaily] = useState([]);
+  const [modelByProviderKeys, setModelByProviderKeys] = useState([]);
+  const [modelByProvider, setModelByProvider] = useState('deepseek');
   const [hiddenPoints, setHiddenPoints] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -189,6 +192,18 @@ export default function Dashboard() {
           setVisible(prev => {
             const next = { ...prev };
             (json.providers || []).forEach(p => { if (next[p] === undefined) next[p] = true; });
+            return next;
+          });
+        } else if (tab === 'models-by-provider') {
+          const res = await fetch(`/api/models-by-provider?provider=${modelByProvider}&days=${days}&top=8`);
+          const json = await res.json();
+          if (cancelled) return;
+          if (json.error) throw new Error(json.error);
+          setModelByProviderDaily(json.daily || []);
+          setModelByProviderKeys(json.models || []);
+          setVisible(prev => {
+            const next = { ...prev };
+            (json.models || []).forEach(m => { if (next[m] === undefined) next[m] = true; });
             return next;
           });
         } else if (tab === 'consolidated') {
@@ -315,6 +330,7 @@ export default function Dashboard() {
     else if (tab === 'models') downloadCSV(`model_mix_${provider}_${days}d.csv`, modelDaily);
     else if (tab === 'categories') downloadCSV(`categories_${days}d.csv`, categoryWeekly);
     else if (tab === 'providers') downloadCSV(`providers_${days}d.csv`, providerDaily);
+    else if (tab === 'models-by-provider') downloadCSV(`model_mix_${modelByProvider}_${days}d.csv`, modelByProviderDaily);
     else downloadCSV(`${tab}_${provider}_${days}d.csv`, data);
   };
 
@@ -358,6 +374,7 @@ export default function Dashboard() {
         <button style={tabStyle(tab === 'corr')} onClick={() => setTab('corr')}>Correlation</button>
         <button style={tabStyle(tab === 'consolidated')} onClick={() => setTab('consolidated')}>Consolidated Spend</button>
         <button style={tabStyle(tab === 'models')} onClick={() => setTab('models')}>Model Mix</button>
+        <button style={tabStyle(tab === 'models-by-provider')} onClick={() => setTab('models-by-provider')}>Model Mix by Provider</button>
         <button style={tabStyle(tab === 'categories')} onClick={() => setTab('categories')}>Task Categories</button>
         <button style={tabStyle(tab === 'providers')} onClick={() => setTab('providers')}>Providers</button>
         <button onClick={handleDownload} style={{ marginLeft: 'auto', padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
@@ -365,7 +382,7 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {tab !== 'consolidated' && tab !== 'categories' && tab !== 'providers' && (
+      {tab !== 'consolidated' && tab !== 'categories' && tab !== 'providers' && tab !== 'models-by-provider' && (
         <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
           <label>Provider:&nbsp;
             <select value={provider} onChange={e => setProvider(e.target.value)}>
@@ -389,7 +406,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {(tab === 'consolidated' || tab === 'categories' || tab === 'providers') && (
+      {(tab === 'consolidated' || tab === 'categories' || tab === 'providers' || tab === 'models-by-provider') && (
         <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
           {tab === 'categories' && (
             <label>View:&nbsp;
@@ -397,6 +414,26 @@ export default function Dashboard() {
                 <option value="total">Total</option>
                 <option value="anthropic">Anthropic</option>
                 <option value="openai">OpenAI</option>
+              </select>
+            </label>
+          )}
+          {tab === 'models-by-provider' && (
+            <label>Provider:&nbsp;
+              <select value={modelByProvider} onChange={e => setModelByProvider(e.target.value)}>
+                <option value="deepseek">DeepSeek</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="google">Google</option>
+                <option value="z-ai">Z.ai</option>
+                <option value="tencent">Tencent</option>
+                <option value="moonshotai">Moonshot</option>
+                <option value="minimax">MiniMax</option>
+                <option value="nvidia">NVIDIA</option>
+                <option value="xiaomi">Xiaomi</option>
+                <option value="stepfun">StepFun</option>
+                <option value="qwen">Qwen</option>
+                <option value="meta">Meta</option>
+                <option value="mistralai">Mistral</option>
               </select>
             </label>
           )}
@@ -488,6 +525,36 @@ export default function Dashboard() {
               }))}
             />
             {modelKeys.map((model, i) => (
+              visible[model] !== false && (
+                <Bar
+                  key={model}
+                  dataKey={model}
+                  stackId="a"
+                  fill={MODEL_COLORS[i % MODEL_COLORS.length]}
+                  name={model}
+                />
+              )
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      ) : tab === 'models-by-provider' ? (
+        <ResponsiveContainer width="100%" height={520}>
+          <BarChart data={modelByProviderDaily} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="date" minTickGap={30} angle={-35} textAnchor="end" height={60} />
+            <YAxis tickFormatter={v => (v / 1e12).toFixed(1) + 'T'} />
+            <Tooltip formatter={(value) => value != null ? Number(value).toLocaleString() + ' tokens' : '—'} />
+            <Legend
+              onClick={legendClick}
+              formatter={legendFormatter}
+              payload={modelByProviderKeys.map((model, i) => ({
+                value: model,
+                dataKey: model,
+                color: MODEL_COLORS[i % MODEL_COLORS.length],
+                type: 'rect',
+              }))}
+            />
+            {modelByProviderKeys.map((model, i) => (
               visible[model] !== false && (
                 <Bar
                   key={model}
