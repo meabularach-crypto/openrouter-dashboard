@@ -62,9 +62,9 @@ export async function GET(request) {
 
       // Normalize model name: strip provider prefix and any :variant suffix
       let model = slug.replace(prefix, '').replace(/:[^/]+$/, '');
-      // Collapse known Fable/Mythos 5.2 variants into a single label
-      if (model.includes('fable-5.2') || model.includes('fable-5-2')) model = 'claude-fable-5.2';
-      if (model.includes('mythos-5.2') || model.includes('mythos-5-2')) model = 'claude-mythos-5.2';
+      // Collapse known Fable/Mythos 5.x variants into a single label
+      if (model.includes('fable') && (model.includes('5.2') || model.includes('5-2'))) model = 'claude-fable-5.2';
+      if (model.includes('mythos') && (model.includes('5.2') || model.includes('5-2'))) model = 'claude-mythos-5.2';
 
       const date = row.date;
 
