@@ -42,6 +42,14 @@ export async function GET(request) {
     const json = await res.json();
     const rows = json.data || [];
 
+    // Temporary debug: collect sample Anthropic slugs so we can see real names
+    const sampleSlugs = [...new Set(
+      rows
+        .filter(r => (r.model_permaslug || '').toLowerCase().startsWith('anthropic/'))
+        .map(r => r.model_permaslug)
+        .slice(0, 40)
+    )];
+
     const prefix = provider === 'openai' ? 'openai/' : 'anthropic/';
     const byDate = {};
     const modelTotals = {};
@@ -109,6 +117,7 @@ export async function GET(request) {
       end_date: endStr,
       models,
       daily,
+      sample_anthropic_slugs: sampleSlugs,
       note: 'claude-fable-5.2 is force-included when present so new Anthropic launches are visible immediately.',
     });
   } catch (e) {
