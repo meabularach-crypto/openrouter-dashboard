@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  ScatterChart, Scatter, ZAxis,
+  ScatterChart, Scatter, ZAxis, BarChart,
 } from 'recharts';
 
 const ARR_POINTS = {
@@ -17,6 +17,8 @@ const ARR_POINTS = {
     { date: '2026-04-06', arr: 30e9 },
     { date: '2026-05-28', arr: 47e9 },
     { date: '2026-07-31', arr: 65e9 },
+    { date: '2026-09-30', arr: 71e9 },
+    { date: '2026-10-31', arr: 81e9 },
   ],
   openai: [
     { date: '2024-12-31', arr: 6e9 },
@@ -26,6 +28,53 @@ const ARR_POINTS = {
     { date: '2026-08-14', arr: 40e9 },
     { date: '2026-09-30', arr: 50e9 },
   ],
+};
+
+const MODEL_COLORS = [
+  '#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6',
+  '#1abc9c', '#e67e22', '#34495e', '#95a5a6', '#d35400',
+  '#16a085', '#8e44ad',
+];
+
+const PROVIDER_COLORS = {
+  deepseek: '#e74c3c',
+  openai: '#3498db',
+  anthropic: '#9b59b6',
+  google: '#f39c12',
+  meta: '#2ecc71',
+  'z-ai': '#1abc9c',
+  tencent: '#e67e22',
+  moonshotai: '#34495e',
+  minimax: '#d35400',
+  nvidia: '#16a085',
+  xiaomi: '#8e44ad',
+  stepfun: '#27ae60',
+  qwen: '#2980b9',
+  mistralai: '#c0392b',
+  other: '#95a5a6',
+};
+
+const CATEGORY_COLORS = {
+  programming: '#3498db',
+  technology: '#2ecc71',
+  roleplay: '#e74c3c',
+  marketing: '#f39c12',
+  science: '#9b59b6',
+  translation: '#1abc9c',
+  legal: '#e67e22',
+  finance: '#27ae60',
+  health: '#e84393',
+  academia: '#8e44ad',
+  trivia: '#95a5a6',
+  unclassified: '#7f8c8d',
+};
+
+const MACRO_COLORS = {
+  code: '#2980b9',
+  data: '#27ae60',
+  agent: '#8e44ad',
+  general: '#e67e22',
+  unclassified: '#7f8c8d',
 };
 
 function nearestSpend(data, targetDate) {
@@ -62,6 +111,18 @@ function linearTrend(points) {
   ];
 }
 
+function toPercent(data, keys) {
+  if (!Array.isArray(data) || !Array.isArray(keys) || !keys.length) return data || [];
+  return data.map(row => {
+    const total = keys.reduce((sum, k) => sum + (Number(row[k]) || 0), 0);
+    const out = { ...row };
+    keys.forEach(k => {
+      out[k] = total === 0 ? 0 : ((Number(row[k]) || 0) / total) * 100;
+    });
+    return out;
+  });
+}
+
 function downloadCSV(filename, rows) {
   if (!rows.length) return;
   const headers = Object.keys(rows[0]);
@@ -84,10 +145,25 @@ function downloadCSV(filename, rows) {
 export default function Dashboard() {
   const [tab, setTab] = useState('volume');
   const [provider, setProvider] = useState('anthropic');
-  const [days, setDays] = useState(365);
+  const [categoryProvider, setCategoryProvider] = useState('total');
+  const [days, setDays] = useState(90);
   const [showPrice, setShowPrice] = useState(false);
   const [data, setData] = useState([]);
   const [consolidatedData, setConsolidatedData] = useState([]);
+  const [modelDaily, setModelDaily] = useState([]);
+  const [modelKeys, setModelKeys] = useState([]);
+  const [modelDebug, setModelDebug] = useState(null);
+  const [categoryWeekly, setCategoryWeekly] = useState([]);
+  const [categoryKeys, setCategoryKeys] = useState([]);
+  const [macroWeekly, setMacroWeekly] = useState([]);
+  const [macroKeys, setMacroKeys] = useState([]);
+  const [providerDaily, setProviderDaily] = useState([]);
+  const [providerKeys, setProviderKeys] = useState([]);
+  const [modelByProviderDaily, setModelByProviderDaily] = useState([]);
+  const [modelByProviderKeys, setModelByProviderKeys] = useState([]);
+  const [modelByProvider, setModelByProvider] = useState('deepseek');
+  const [availableProviders, setAvailableProviders] = useState([]);
+  const [showPercent, setShowPercent] = useState(false);
   const [hiddenPoints, setHiddenPoints] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -108,7 +184,81 @@ export default function Dashboard() {
       setLoading(true);
       setError(null);
       try {
-        if (tab === 'consolidated') {
+        if (tab === 'models') {
+          const res = await fetch(`/api/models?provider=${provider}&days=${days}`);
+          const json = await res.json();
+          if (cancelled) return;
+          if (json.error) throw new Error(json.error);
+          setModelDaily(json.daily || []);
+          setModelKeys(json.models || []);
+          setModelDebug(json.sample_anthropic_slugs || null);
+          // ensure new model keys start visible
+          setVisible(prev => {
+            const next = { ...prev };
+            (json.models || []).forEach(m => { if (next[m] === undefined) next[m] = true; });
+            return next;
+          });
+        } else if (tab === 'categories') {
+          const res = await fetch(`/api/categories?days=${days}&provider=${categoryProvider}`);
+          const json = await res.json();
+          if (cancelled) return;
+          if (json.error) throw new Error(json.error);
+          setCategoryWeekly(json.weekly || []);
+          setCategoryKeys(json.categories || []);
+          setVisible(prev => {
+            const next = { ...prev };
+            (json.categories || []).forEach(c => { if (next[c] === undefined) next[c] = true; });
+            return next;
+          });
+        } else if (tab === 'macros') {
+          const res = await fetch(`/api/macro-categories?days=${days}&provider=${categoryProvider}`);
+          const json = await res.json();
+          if (cancelled) return;
+          if (json.error) throw new Error(json.error);
+          setMacroWeekly(json.weekly || []);
+          setMacroKeys(json.macros || []);
+          setVisible(prev => {
+            const next = { ...prev };
+            (json.macros || []).forEach(m => { if (next[m] === undefined) next[m] = true; });
+            return next;
+          });
+        } else if (tab === 'providers') {
+          const res = await fetch(`/api/providers?days=${days}&top=10`);
+          const json = await res.json();
+          if (cancelled) return;
+          if (json.error) throw new Error(json.error);
+          setProviderDaily(json.daily || []);
+          setProviderKeys(json.providers || []);
+          setVisible(prev => {
+            const next = { ...prev };
+            (json.providers || []).forEach(p => { if (next[p] === undefined) next[p] = true; });
+            return next;
+          });
+        } else if (tab === 'models-by-provider') {
+          // Load top 20 providers for the dropdown if not already loaded
+          if (availableProviders.length === 0) {
+            const provRes = await fetch(`/api/providers?days=${days}&top=20`);
+            const provJson = await provRes.json();
+            if (!provJson.error && provJson.providers) {
+              const list = provJson.providers.filter(p => p !== 'other');
+              setAvailableProviders(list);
+              if (list.length && !list.includes(modelByProvider)) {
+                setModelByProvider(list[0]);
+              }
+            }
+          }
+          const res = await fetch(`/api/models-by-provider?provider=${modelByProvider}&days=${days}&top=8`);
+          const json = await res.json();
+          if (cancelled) return;
+          if (json.error) throw new Error(json.error);
+          setModelByProviderDaily(json.daily || []);
+          setModelByProviderKeys(json.models || []);
+          setVisible(prev => {
+            const next = { ...prev };
+            (json.models || []).forEach(m => { if (next[m] === undefined) next[m] = true; });
+            return next;
+          });
+        } else if (tab === 'consolidated') {
           const [anthVol, anthPrice, oaiVol, oaiPrice] = await Promise.all([
             fetch(`/api/data?provider=anthropic&days=${days}`).then(r => r.json()),
             fetch(`/api/prices?provider=anthropic&days=${days}`).then(r => r.json()),
@@ -187,6 +337,7 @@ export default function Dashboard() {
             t28.push(q.length === 28 ? sum / 28 : null);
           }
           merged.forEach((d, i) => { d.trailing28_spend = t28[i]; });
+
           setData(merged);
         }
       } catch (e) {
@@ -197,7 +348,7 @@ export default function Dashboard() {
     }
     load();
     return () => { cancelled = true; };
-  }, [provider, days, tab]);
+  }, [provider, days, tab, categoryProvider, modelByProvider]);
 
   if (error) return <div style={{ color: 'red', padding: 20 }}>Error: {error}</div>;
   if (loading) return <div style={{ padding: 20 }}>Loading…</div>;
@@ -228,6 +379,11 @@ export default function Dashboard() {
   const handleDownload = () => {
     if (tab === 'corr') downloadCSV(`correlation_${provider}.csv`, corrPoints);
     else if (tab === 'consolidated') downloadCSV(`consolidated_spend_${days}d.csv`, consolidatedData);
+    else if (tab === 'models') downloadCSV(`model_mix_${provider}_${days}d.csv`, modelDaily);
+    else if (tab === 'categories') downloadCSV(`categories_${days}d.csv`, categoryWeekly);
+    else if (tab === 'macros') downloadCSV(`macro_categories_${days}d.csv`, macroWeekly);
+    else if (tab === 'providers') downloadCSV(`providers_${days}d.csv`, providerDaily);
+    else if (tab === 'models-by-provider') downloadCSV(`model_mix_${modelByProvider}_${days}d.csv`, modelByProviderDaily);
     else downloadCSV(`${tab}_${provider}_${days}d.csv`, data);
   };
 
@@ -270,12 +426,17 @@ export default function Dashboard() {
         <button style={tabStyle(tab === 'spend')} onClick={() => setTab('spend')}>Estimated Spend</button>
         <button style={tabStyle(tab === 'corr')} onClick={() => setTab('corr')}>Correlation</button>
         <button style={tabStyle(tab === 'consolidated')} onClick={() => setTab('consolidated')}>Consolidated Spend</button>
+        <button style={tabStyle(tab === 'models')} onClick={() => setTab('models')}>Model Mix</button>
+        <button style={tabStyle(tab === 'models-by-provider')} onClick={() => setTab('models-by-provider')}>Model Mix by Provider</button>
+        <button style={tabStyle(tab === 'categories')} onClick={() => setTab('categories')}>Task Categories</button>
+        <button style={tabStyle(tab === 'macros')} onClick={() => setTab('macros')}>Macro Categories</button>
+        <button style={tabStyle(tab === 'providers')} onClick={() => setTab('providers')}>Providers</button>
         <button onClick={handleDownload} style={{ marginLeft: 'auto', padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
           Download CSV
         </button>
       </div>
 
-      {tab !== 'consolidated' && (
+      {tab !== 'consolidated' && tab !== 'categories' && tab !== 'providers' && tab !== 'models-by-provider' && (
         <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
           <label>Provider:&nbsp;
             <select value={provider} onChange={e => setProvider(e.target.value)}>
@@ -290,6 +451,12 @@ export default function Dashboard() {
               <option value={365}>365 days</option>
             </select>
           </label>
+          {tab === 'models' && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="checkbox" checked={showPercent} onChange={e => setShowPercent(e.target.checked)} />
+              Show as % share
+            </label>
+          )}
           {tab === 'volume' && (
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <input type="checkbox" checked={showPrice} onChange={e => setShowPrice(e.target.checked)} />
@@ -299,8 +466,39 @@ export default function Dashboard() {
         </div>
       )}
 
-      {tab === 'consolidated' && (
-        <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+      {(tab === 'consolidated' || tab === 'categories' || tab === 'macros' || tab === 'providers' || tab === 'models-by-provider') && (
+        <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+          {tab === 'categories' && (
+            <label>View:&nbsp;
+              <select value={categoryProvider} onChange={e => setCategoryProvider(e.target.value)}>
+                <option value="total">Total</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="openai">OpenAI</option>
+              </select>
+            </label>
+          )}
+          {tab === 'macros' && (
+            <label>View:&nbsp;
+              <select value={categoryProvider} onChange={e => setCategoryProvider(e.target.value)}>
+                <option value="total">Total</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="openai">OpenAI</option>
+              </select>
+            </label>
+          )}
+          {tab === 'models-by-provider' && (
+            <label>Provider:&nbsp;
+              <select value={modelByProvider} onChange={e => setModelByProvider(e.target.value)}>
+                {availableProviders.length === 0 ? (
+                  <option value="deepseek">Loading providers…</option>
+                ) : (
+                  availableProviders.map(p => (
+                    <option key={p} value={p}>{p === 'x-ai' ? 'xAI / SpaceXAI' : p}</option>
+                  ))
+                )}
+              </select>
+            </label>
+          )}
           <label>Lookback:&nbsp;
             <select value={days} onChange={e => setDays(Number(e.target.value))}>
               <option value={90}>90 days</option>
@@ -308,10 +506,184 @@ export default function Dashboard() {
               <option value={365}>365 days</option>
             </select>
           </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={showPercent} onChange={e => setShowPercent(e.target.checked)} />
+            Show as % share
+          </label>
         </div>
       )}
 
-      {tab === 'corr' ? (
+      {tab === 'categories' ? (
+        categoryWeekly.length === 0 ? <div style={{ padding: 20 }}>No category data</div> :
+        <ResponsiveContainer width="100%" height={520}>
+          <BarChart data={showPercent ? toPercent(categoryWeekly, categoryKeys) : categoryWeekly} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="date" minTickGap={30} angle={-35} textAnchor="end" height={60} />
+            <YAxis tickFormatter={v => showPercent ? (Number(v) || 0).toFixed(0) + '%' : (v / 1e12).toFixed(1) + 'T'} domain={showPercent ? [0, 100] : ['auto', 'auto']} />
+            <Tooltip formatter={(value) => value != null ? (showPercent ? value.toFixed(1) + '%' : Number(value).toLocaleString() + ' tokens') : '—'} />
+            <Legend
+              onClick={legendClick}
+              formatter={legendFormatter}
+              payload={categoryKeys.map(cat => ({
+                value: cat,
+                dataKey: cat,
+                color: CATEGORY_COLORS[cat] || '#888',
+                type: 'rect',
+              }))}
+            />
+            {categoryKeys.map((cat) => (
+              visible[cat] !== false && (
+                <Bar
+                  key={cat}
+                  dataKey={cat}
+                  stackId="a"
+                  fill={CATEGORY_COLORS[cat] || '#888'}
+                  name={cat}
+                />
+              )
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      ) : tab === 'macros' ? (
+        macroWeekly.length === 0 ? <div style={{ padding: 20 }}>No macro category data</div> :
+        (() => {
+          const visibleKeys = macroKeys.filter(k => visible[k] !== false);
+          const chartData = showPercent ? toPercent(macroWeekly, visibleKeys) : macroWeekly;
+          return (
+            <ResponsiveContainer width="100%" height={520}>
+              <BarChart data={chartData} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" minTickGap={30} angle={-35} textAnchor="end" height={60} />
+                <YAxis tickFormatter={v => showPercent ? (Number(v) || 0).toFixed(0) + '%' : (v / 1e12).toFixed(1) + 'T'} domain={showPercent ? [0, 100] : ['auto', 'auto']} />
+                <Tooltip formatter={(value) => value != null ? (showPercent ? value.toFixed(1) + '%' : Number(value).toLocaleString() + ' tokens') : '—'} />
+                <Legend
+                  onClick={legendClick}
+                  formatter={legendFormatter}
+                  payload={macroKeys.map(m => ({
+                    value: m,
+                    dataKey: m,
+                    color: MACRO_COLORS[m] || '#888',
+                    type: 'rect',
+                  }))}
+                />
+                {macroKeys.map((m) => (
+                  visible[m] !== false && (
+                    <Bar
+                      key={m}
+                      dataKey={m}
+                      stackId="a"
+                      fill={MACRO_COLORS[m] || '#888'}
+                      name={m}
+                    />
+                  )
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          );
+        })()
+      ) : tab === 'providers' ? (
+        providerDaily.length === 0 ? <div style={{ padding: 20 }}>No provider data</div> :
+        <ResponsiveContainer width="100%" height={520}>
+          <BarChart data={showPercent ? toPercent(providerDaily, providerKeys) : providerDaily} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="date" minTickGap={30} angle={-35} textAnchor="end" height={60} />
+            <YAxis tickFormatter={v => showPercent ? (Number(v) || 0).toFixed(0) + '%' : (v / 1e12).toFixed(1) + 'T'} domain={showPercent ? [0, 100] : ['auto', 'auto']} />
+            <Tooltip formatter={(value) => value != null ? (showPercent ? value.toFixed(1) + '%' : Number(value).toLocaleString() + ' tokens') : '—'} />
+            <Legend
+              onClick={legendClick}
+              formatter={legendFormatter}
+              payload={providerKeys.map(p => ({
+                value: p,
+                dataKey: p,
+                color: PROVIDER_COLORS[p] || '#888',
+                type: 'rect',
+              }))}
+            />
+            {providerKeys.map((p) => (
+              visible[p] !== false && (
+                <Bar
+                  key={p}
+                  dataKey={p}
+                  stackId="a"
+                  fill={PROVIDER_COLORS[p] || '#888'}
+                  name={p}
+                />
+              )
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      ) : tab === 'models' ? (
+        modelDaily.length === 0 ? (
+          <div style={{ padding: 20 }}>
+            No model data
+            {modelDebug && (
+              <pre style={{ fontSize: 12, marginTop: 8, whiteSpace: 'pre-wrap' }}>
+                Sample Anthropic slugs: {JSON.stringify(modelDebug, null, 2)}
+              </pre>
+            )}
+          </div>
+        ) :
+        <ResponsiveContainer width="100%" height={520}>
+          <BarChart data={showPercent ? toPercent(modelDaily, modelKeys) : modelDaily} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="date" minTickGap={30} angle={-35} textAnchor="end" height={60} />
+            <YAxis tickFormatter={v => showPercent ? (Number(v) || 0).toFixed(0) + '%' : (v / 1e12).toFixed(1) + 'T'} domain={showPercent ? [0, 100] : ['auto', 'auto']} />
+            <Tooltip formatter={(value) => value != null ? (showPercent ? value.toFixed(1) + '%' : Number(value).toLocaleString() + ' tokens') : '—'} />
+            <Legend
+              onClick={legendClick}
+              formatter={legendFormatter}
+              payload={modelKeys.map((model, i) => ({
+                value: model,
+                dataKey: model,
+                color: MODEL_COLORS[i % MODEL_COLORS.length],
+                type: 'rect',
+              }))}
+            />
+            {modelKeys.map((model, i) => (
+              visible[model] !== false && (
+                <Bar
+                  key={model}
+                  dataKey={model}
+                  stackId="a"
+                  fill={MODEL_COLORS[i % MODEL_COLORS.length]}
+                  name={model}
+                />
+              )
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      ) : tab === 'models-by-provider' ? (
+        modelByProviderDaily.length === 0 ? <div style={{ padding: 20 }}>No model data for this provider</div> :
+        <ResponsiveContainer width="100%" height={520}>
+          <BarChart data={showPercent ? toPercent(modelByProviderDaily, modelByProviderKeys) : modelByProviderDaily} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="date" minTickGap={30} angle={-35} textAnchor="end" height={60} />
+            <YAxis tickFormatter={v => showPercent ? (Number(v) || 0).toFixed(0) + '%' : (v / 1e12).toFixed(1) + 'T'} domain={showPercent ? [0, 100] : ['auto', 'auto']} />
+            <Tooltip formatter={(value) => value != null ? (showPercent ? value.toFixed(1) + '%' : Number(value).toLocaleString() + ' tokens') : '—'} />
+            <Legend
+              onClick={legendClick}
+              formatter={legendFormatter}
+              payload={modelByProviderKeys.map((model, i) => ({
+                value: model,
+                dataKey: model,
+                color: MODEL_COLORS[i % MODEL_COLORS.length],
+                type: 'rect',
+              }))}
+            />
+            {modelByProviderKeys.map((model, i) => (
+              visible[model] !== false && (
+                <Bar
+                  key={model}
+                  dataKey={model}
+                  stackId="a"
+                  fill={MODEL_COLORS[i % MODEL_COLORS.length]}
+                  name={model}
+                />
+              )
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
+      ) : tab === 'corr' ? (
         <ResponsiveContainer width="100%" height={440}>
           <ScatterChart margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
             <CartesianGrid strokeDasharray="3 3" />
@@ -329,12 +701,13 @@ export default function Dashboard() {
           </ScatterChart>
         </ResponsiveContainer>
       ) : tab === 'consolidated' ? (
+        consolidatedData.length === 0 ? <div style={{ padding: 20 }}>No consolidated data</div> :
         <ResponsiveContainer width="100%" height={440}>
-          <ComposedChart data={consolidatedData} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
+          <ComposedChart data={showPercent ? toPercent(consolidatedData, ['anthropic', 'openai']) : consolidatedData} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="date" minTickGap={40} />
-            <YAxis tickFormatter={v => '$' + (v / 1e6).toFixed(1) + 'M'} />
-            <Tooltip formatter={(value) => value != null ? `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'} />
+            <YAxis tickFormatter={v => showPercent ? (Number(v) || 0).toFixed(0) + '%' : '$' + (v / 1e6).toFixed(1) + 'M'} domain={showPercent ? [0, 100] : ['auto', 'auto']} />
+            <Tooltip formatter={(value) => value != null ? (showPercent ? value.toFixed(1) + '%' : `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`) : '—'} />
             <Legend onClick={legendClick} formatter={legendFormatter} payload={consolidatedLegendPayload} />
             {visible.anthropic && <Bar dataKey="anthropic" name="Anthropic" stackId="a" fill="#e74c3c" />}
             {visible.openai && <Bar dataKey="openai" name="OpenAI" stackId="a" fill="#3498db" />}
@@ -379,7 +752,7 @@ export default function Dashboard() {
       )}
 
       <p style={{ fontSize: 13, color: '#666', marginTop: 8 }}>
-        Click any legend item to turn that series on or off. Inactive labels turn light gray; the data is fully removed so the axis rescales. On the Correlation tab, click any dot to remove it.
+        Click any legend item to turn that series on or off. Inactive labels turn light gray; the data is fully removed so the axis rescales. On the Correlation tab, click any dot to remove it. Model Mix shows daily stacked bars of top models. Task Categories shows weekly stacked estimates by use-case (programming, finance, health, etc.) from OpenRouter’s sampled category data. Macro Categories rolls those into OpenRouter’s official Code / Data / Agent / General groups (plus unclassified remainder).
       </p>
     </div>
   );
