@@ -103,7 +103,19 @@ function linearTrend(points) {
   ];
 }
 
-function downloadCSV(filename, rows) {
+function toPercent(data, keys) {
+  if (!data || !keys || !keys.length) return data || [];
+  return data.map(row => {
+    const total = keys.reduce((sum, k) => sum + (Number(row[k]) || 0), 0);
+    const out = { ...row };
+    if (total === 0) {
+      keys.forEach(k => { out[k] = 0; });
+    } else {
+      keys.forEach(k => { out[k] = ((Number(row[k]) || 0) / total) * 100; });
+    }
+    return out;
+  });
+}
   if (!rows.length) return;
   const headers = Object.keys(rows[0]);
   const csv = [
@@ -138,7 +150,7 @@ export default function Dashboard() {
   const [providerKeys, setProviderKeys] = useState([]);
   const [modelByProviderDaily, setModelByProviderDaily] = useState([]);
   const [modelByProviderKeys, setModelByProviderKeys] = useState([]);
-  const [modelByProvider, setModelByProvider] = useState('deepseek');
+  const [showPercent, setShowPercent] = useState(false);
   const [hiddenPoints, setHiddenPoints] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -298,7 +310,7 @@ export default function Dashboard() {
     }
     load();
     return () => { cancelled = true; };
-  }, [provider, days, tab, categoryProvider]);
+  }, [provider, days, tab, categoryProvider, modelByProvider]);
 
   if (error) return <div style={{ color: 'red', padding: 20 }}>Error: {error}</div>;
   if (loading) return <div style={{ padding: 20 }}>Loading…</div>;
@@ -399,6 +411,12 @@ export default function Dashboard() {
               <option value={365}>365 days</option>
             </select>
           </label>
+          {tab === 'models' && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="checkbox" checked={showPercent} onChange={e => setShowPercent(e.target.checked)} />
+              Show as % share
+            </label>
+          )}
           {tab === 'volume' && (
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <input type="checkbox" checked={showPrice} onChange={e => setShowPrice(e.target.checked)} />
@@ -446,16 +464,20 @@ export default function Dashboard() {
               <option value={365}>365 days</option>
             </select>
           </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={showPercent} onChange={e => setShowPercent(e.target.checked)} />
+            Show as % share
+          </label>
         </div>
       )}
 
       {tab === 'categories' ? (
         <ResponsiveContainer width="100%" height={520}>
-          <BarChart data={categoryWeekly} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
+          <BarChart data={showPercent ? toPercent(categoryWeekly, categoryKeys) : categoryWeekly} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="date" minTickGap={30} angle={-35} textAnchor="end" height={60} />
-            <YAxis tickFormatter={v => (v / 1e12).toFixed(1) + 'T'} />
-            <Tooltip formatter={(value) => value != null ? Number(value).toLocaleString() + ' tokens' : '—'} />
+            <YAxis tickFormatter={v => showPercent ? v.toFixed(0) + '%' : (v / 1e12).toFixed(1) + 'T'} domain={showPercent ? [0, 100] : undefined} />
+            <Tooltip formatter={(value) => value != null ? (showPercent ? value.toFixed(1) + '%' : Number(value).toLocaleString() + ' tokens') : '—'} />
             <Legend
               onClick={legendClick}
               formatter={legendFormatter}
@@ -481,11 +503,11 @@ export default function Dashboard() {
         </ResponsiveContainer>
       ) : tab === 'providers' ? (
         <ResponsiveContainer width="100%" height={520}>
-          <BarChart data={providerDaily} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
+          <BarChart data={showPercent ? toPercent(providerDaily, providerKeys) : providerDaily} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="date" minTickGap={30} angle={-35} textAnchor="end" height={60} />
-            <YAxis tickFormatter={v => (v / 1e12).toFixed(1) + 'T'} />
-            <Tooltip formatter={(value) => value != null ? Number(value).toLocaleString() + ' tokens' : '—'} />
+            <YAxis tickFormatter={v => showPercent ? v.toFixed(0) + '%' : (v / 1e12).toFixed(1) + 'T'} domain={showPercent ? [0, 100] : undefined} />
+            <Tooltip formatter={(value) => value != null ? (showPercent ? value.toFixed(1) + '%' : Number(value).toLocaleString() + ' tokens') : '—'} />
             <Legend
               onClick={legendClick}
               formatter={legendFormatter}
@@ -511,11 +533,11 @@ export default function Dashboard() {
         </ResponsiveContainer>
       ) : tab === 'models' ? (
         <ResponsiveContainer width="100%" height={520}>
-          <BarChart data={modelDaily} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
+          <BarChart data={showPercent ? toPercent(modelDaily, modelKeys) : modelDaily} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="date" minTickGap={30} angle={-35} textAnchor="end" height={60} />
-            <YAxis tickFormatter={v => (v / 1e12).toFixed(1) + 'T'} />
-            <Tooltip formatter={(value) => value != null ? Number(value).toLocaleString() + ' tokens' : '—'} />
+            <YAxis tickFormatter={v => showPercent ? v.toFixed(0) + '%' : (v / 1e12).toFixed(1) + 'T'} domain={showPercent ? [0, 100] : undefined} />
+            <Tooltip formatter={(value) => value != null ? (showPercent ? value.toFixed(1) + '%' : Number(value).toLocaleString() + ' tokens') : '—'} />
             <Legend
               onClick={legendClick}
               formatter={legendFormatter}
@@ -541,11 +563,11 @@ export default function Dashboard() {
         </ResponsiveContainer>
       ) : tab === 'models-by-provider' ? (
         <ResponsiveContainer width="100%" height={520}>
-          <BarChart data={modelByProviderDaily} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
+          <BarChart data={showPercent ? toPercent(modelByProviderDaily, modelByProviderKeys) : modelByProviderDaily} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="date" minTickGap={30} angle={-35} textAnchor="end" height={60} />
-            <YAxis tickFormatter={v => (v / 1e12).toFixed(1) + 'T'} />
-            <Tooltip formatter={(value) => value != null ? Number(value).toLocaleString() + ' tokens' : '—'} />
+            <YAxis tickFormatter={v => showPercent ? v.toFixed(0) + '%' : (v / 1e12).toFixed(1) + 'T'} domain={showPercent ? [0, 100] : undefined} />
+            <Tooltip formatter={(value) => value != null ? (showPercent ? value.toFixed(1) + '%' : Number(value).toLocaleString() + ' tokens') : '—'} />
             <Legend
               onClick={legendClick}
               formatter={legendFormatter}
@@ -588,11 +610,11 @@ export default function Dashboard() {
         </ResponsiveContainer>
       ) : tab === 'consolidated' ? (
         <ResponsiveContainer width="100%" height={440}>
-          <ComposedChart data={consolidatedData} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
+          <ComposedChart data={showPercent ? toPercent(consolidatedData, ['anthropic', 'openai']) : consolidatedData} margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="date" minTickGap={40} />
-            <YAxis tickFormatter={v => '$' + (v / 1e6).toFixed(1) + 'M'} />
-            <Tooltip formatter={(value) => value != null ? `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'} />
+            <YAxis tickFormatter={v => showPercent ? v.toFixed(0) + '%' : '$' + (v / 1e6).toFixed(1) + 'M'} domain={showPercent ? [0, 100] : undefined} />
+            <Tooltip formatter={(value) => value != null ? (showPercent ? value.toFixed(1) + '%' : `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`) : '—'} />
             <Legend onClick={legendClick} formatter={legendFormatter} payload={consolidatedLegendPayload} />
             {visible.anthropic && <Bar dataKey="anthropic" name="Anthropic" stackId="a" fill="#e74c3c" />}
             {visible.openai && <Bar dataKey="openai" name="OpenAI" stackId="a" fill="#3498db" />}
