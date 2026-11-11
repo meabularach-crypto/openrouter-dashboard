@@ -464,7 +464,6 @@ export default function Dashboard() {
                   ))
                 )}
               </select>
-              </select>
             </label>
           )}
           <label>Lookback:&nbsp;
