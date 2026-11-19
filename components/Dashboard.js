@@ -445,10 +445,11 @@ export default function Dashboard() {
             </select>
           </label>
           <label>Lookback:&nbsp;
-            <select value={days} onChange={e => setDays(Number(e.target.value))}>
+            <select value={days} onChange={e => setDays(e.target.value)}>
               <option value={90}>90 days</option>
               <option value={180}>180 days</option>
               <option value={365}>365 days</option>
+              <option value="since2025">Since Jan 1 2025</option>
             </select>
           </label>
           {tab === 'models' && (
@@ -500,10 +501,11 @@ export default function Dashboard() {
             </label>
           )}
           <label>Lookback:&nbsp;
-            <select value={days} onChange={e => setDays(Number(e.target.value))}>
+            <select value={days} onChange={e => setDays(e.target.value)}>
               <option value={90}>90 days</option>
               <option value={180}>180 days</option>
               <option value={365}>365 days</option>
+              <option value="since2025">Since Jan 1 2025</option>
             </select>
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
