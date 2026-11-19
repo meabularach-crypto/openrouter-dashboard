@@ -12,44 +12,53 @@ const FORCE_INCLUDE = [
 
 // Known provider prefixes we support in the dropdown
 const SUPPORTED = [
-  'anthropic', 'openai', 'deepseek', 'google', 'meta', 'z-ai', 'tencent',
+  'anthropic', 'openai', 'deepseek', 'google', 'meta', 'x-ai', 'z-ai', 'tencent',
   'moonshotai', 'minimax', 'nvidia', 'xiaomi', 'stepfun', 'qwen', 'mistralai',
+  'cohere', 'amazon', 'microsoft', 'ai21', 'together', 'fireworks', 'groq',
+  'perplexity', 'inflection', 'databricks', 'snowflake', 'baidu', 'alibaba',
 ];
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
+  const daysParam = searchParams.get('days') || '90';
+  const isSince2025 = daysParam === 'since2025';
   const provider = (searchParams.get('provider') || 'deepseek').toLowerCase();
-  const days = Math.min(365, Math.max(7, parseInt(searchParams.get('days') || '90', 10)));
   const topN = Math.min(12, Math.max(5, parseInt(searchParams.get('top') || '8', 10)));
 
   const end = new Date();
   end.setUTCDate(end.getUTCDate() - 1);
-  const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - days + 1);
-
-  const startStr = start.toISOString().slice(0, 10);
   const endStr = end.toISOString().slice(0, 10);
+
+  const windows = [];
+  if (isSince2025) {
+    windows.push({ start: '2025-01-01', end: '2025-12-31' });
+    windows.push({ start: '2026-01-01', end: endStr });
+  } else {
+    const days = Math.min(365, Math.max(7, parseInt(daysParam, 10) || 90));
+    const start = new Date(end);
+    start.setUTCDate(start.getUTCDate() - days + 1);
+    windows.push({ start: start.toISOString().slice(0, 10), end: endStr });
+  }
 
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) {
     return NextResponse.json({ error: 'OPENROUTER_API_KEY not set' }, { status: 500 });
   }
 
-  const url = `https://openrouter.ai/api/v1/datasets/rankings-daily?start_date=${startStr}&end_date=${endStr}`;
-
   try {
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${key}` },
-      next: { revalidate: 3600 },
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      return NextResponse.json({ error: `OpenRouter ${res.status}: ${text.slice(0, 200)}` }, { status: 502 });
+    const allRows = [];
+    for (const win of windows) {
+      const url = `https://openrouter.ai/api/v1/datasets/rankings-daily?start_date=${win.start}&end_date=${win.end}`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${key}` },
+        next: { revalidate: 3600 },
+      });
+      if (!res.ok) continue;
+      const json = await res.json();
+      allRows.push(...(json.data || []));
     }
 
-    const json = await res.json();
-    const rows = json.data || [];
+    const rows = allRows;
 
     const sampleSlugs = [...new Set(
       rows
@@ -114,9 +123,11 @@ export async function GET(request) {
     const models = [...topModels];
     if (daily.some(d => d.other)) models.push('other');
 
+    const startStr = windows[0].start;
+
     return NextResponse.json({
       provider,
-      days,
+      days: isSince2025 ? 'since2025' : daysParam,
       top: topN,
       start_date: startStr,
       end_date: endStr,
