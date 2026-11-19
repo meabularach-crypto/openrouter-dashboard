@@ -2,16 +2,24 @@ import { NextResponse } from 'next/server';
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const days = Math.min(365, Math.max(28, parseInt(searchParams.get('days') || '90', 10)));
+  const daysParam = searchParams.get('days') || '90';
+  const isSince2025 = daysParam === 'since2025';
   const topN = Math.min(25, Math.max(5, parseInt(searchParams.get('top') || '10', 10)));
 
   const end = new Date();
   end.setUTCDate(end.getUTCDate() - 1);
-  const start = new Date(end);
-  start.setUTCDate(start.getUTCDate() - days + 1);
-
-  const startStr = start.toISOString().slice(0, 10);
   const endStr = end.toISOString().slice(0, 10);
+
+  const windows = [];
+  if (isSince2025) {
+    windows.push({ start: '2025-01-01', end: '2025-12-31' });
+    windows.push({ start: '2026-01-01', end: endStr });
+  } else {
+    const days = Math.min(365, Math.max(28, parseInt(daysParam, 10) || 90));
+    const start = new Date(end);
+    start.setUTCDate(start.getUTCDate() - days + 1);
+    windows.push({ start: start.toISOString().slice(0, 10), end: endStr });
+  }
 
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) {
@@ -19,17 +27,19 @@ export async function GET(request) {
   }
 
   try {
-    const url = `https://openrouter.ai/api/v1/datasets/rankings-daily?start_date=${startStr}&end_date=${endStr}`;
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${key}` },
-      next: { revalidate: 3600 },
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 200)}`);
+    const allRows = [];
+    for (const win of windows) {
+      const url = `https://openrouter.ai/api/v1/datasets/rankings-daily?start_date=${win.start}&end_date=${win.end}`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${key}` },
+        next: { revalidate: 3600 },
+      });
+      if (!res.ok) continue;
+      const json = await res.json();
+      allRows.push(...(json.data || []));
     }
-    const json = await res.json();
-    const rows = json.data || [];
+
+    const rows = allRows;
 
     // Aggregate by date + provider prefix
     const byDate = {};
@@ -75,14 +85,18 @@ export async function GET(request) {
     const active = [...topProviders];
     if (daily.some(d => d.other > 0)) active.push('other');
 
+    const startStr = windows[0].start;
+
     return NextResponse.json({
-      days,
+      days: isSince2025 ? 'since2025' : daysParam,
       top: topN,
       start_date: startStr,
       end_date: endStr,
       providers: active,
       daily,
-      note: 'Daily token volume by model provider (prefix of model_permaslug). Top N by total volume; remainder in "other".',
+      note: isSince2025
+        ? 'Combined 2025 full year + 2026 YTD. Daily token volume by model provider.'
+        : 'Daily token volume by model provider (prefix of model_permaslug). Top N by total volume; remainder in "other".',
     });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
