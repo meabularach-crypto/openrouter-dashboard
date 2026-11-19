@@ -266,7 +266,10 @@ export default function Dashboard() {
             fetch(`/api/prices?provider=openai&days=${days}`).then(r => r.json()),
           ]);
           if (cancelled) return;
-          if (anthVol.error || anthPrice.error || oaiVol.error || oaiPrice.error) throw new Error('Failed to load datasets');
+          if (anthVol.error || anthPrice.error || oaiVol.error || oaiPrice.error) {
+            const errs = [anthVol.error, anthPrice.error, oaiVol.error, oaiPrice.error].filter(Boolean);
+            throw new Error('Failed to load datasets: ' + errs.join('; '));
+          }
 
           const anthPriceMap = Object.fromEntries((anthPrice.daily || []).map(p => [p.date, p]));
           const oaiPriceMap = Object.fromEntries((oaiPrice.daily || []).map(p => [p.date, p]));
