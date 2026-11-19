@@ -22,51 +22,63 @@ export async function GET(req) {
   }
 
   const url = new URL(req.url);
-  const days = Math.min(parseInt(url.searchParams.get('days') || '90', 10), 365);
+  const daysParam = url.searchParams.get('days') || '90';
+  const isSince2025 = daysParam === 'since2025';
   const provider = (url.searchParams.get('provider') || 'anthropic').toLowerCase();
 
   const end = new Date();
-  const start = new Date(end);
-  start.setDate(end.getDate() - days);
-
-  const startStr = start.toISOString().slice(0, 10);
+  end.setUTCDate(end.getUTCDate() - 1);
   const endStr = end.toISOString().slice(0, 10);
 
+  const windows = [];
+  if (isSince2025) {
+    windows.push({ start: '2025-01-01', end: '2025-12-31' });
+    windows.push({ start: '2026-01-01', end: endStr });
+  } else {
+    const days = Math.min(365, Math.max(7, parseInt(daysParam, 10) || 90));
+    const start = new Date(end);
+    start.setUTCDate(start.getUTCDate() - days + 1);
+    windows.push({ start: start.toISOString().slice(0, 10), end: endStr });
+  }
+
   try {
-    const res = await fetch(
-      `${OPENROUTER_BASE}?start_date=${startStr}&end_date=${endStr}`,
-      {
-        headers: {
-          Authorization: `Bearer ${key}`,
-          'Content-Type': 'application/json',
-        },
-        next: { revalidate: 3600 },
+    const allRows = [];
+    for (const win of windows) {
+      const res = await fetch(
+        `${OPENROUTER_BASE}?start_date=${win.start}&end_date=${win.end}`,
+        {
+          headers: {
+            Authorization: `Bearer ${key}`,
+            'Content-Type': 'application/json',
+          },
+          next: { revalidate: 3600 },
+        }
+      );
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.warn(`OpenRouter ${res.status} for ${win.start}-${win.end}: ${text.slice(0, 200)}`);
+        continue;
       }
-    );
 
-    if (!res.ok) {
-      const text = await res.text();
-      return NextResponse.json({ error: `OpenRouter ${res.status}: ${text}` }, { status: 502 });
+      const raw = await res.json();
+      const rows = Array.isArray(raw) ? raw : raw.data || raw.rows || [];
+      allRows.push(...rows);
     }
-
-    const raw = await res.json();
-    const rows = Array.isArray(raw) ? raw : raw.data || raw.rows || [];
 
     const prefix = provider === 'openai' ? 'openai/' : 'anthropic/';
     const byDate = {};
 
-    for (const row of rows) {
+    for (const row of allRows) {
       const slug = row.model_permaslug || row.model || '';
+      if (!slug.startsWith(prefix)) continue;
+
       const date = (row.date || '').slice(0, 10);
       if (!date) continue;
 
       const tokens = Number(row.total_tokens || row.tokens || 0);
-
-      // Include provider models + the aggregated "other" row so totals are complete
-      if (slug.startsWith(prefix) || slug === 'other') {
-        if (!byDate[date]) byDate[date] = 0;
-        byDate[date] += tokens;
-      }
+      if (!byDate[date]) byDate[date] = 0;
+      byDate[date] += tokens;
     }
 
     const dates = Object.keys(byDate).sort();
@@ -85,11 +97,10 @@ export async function GET(req) {
       daily,
       meta: {
         provider,
-        start: startStr,
+        start: windows[0].start,
         end: endStr,
-        days,
+        days: isSince2025 ? 'since2025' : daysParam,
         fetchedAt: new Date().toISOString(),
-        rowCount: rows.length,
       },
     });
   } catch (err) {
