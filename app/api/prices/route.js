@@ -35,6 +35,8 @@ export async function GET(req) {
         date,
         median_input: median(inputs),
         median_output: median(outputs),
+        avg_input: median(inputs),     // alias expected by Dashboard
+        avg_output: median(outputs),   // alias expected by Dashboard
         n_models: models.length,
       };
     }
