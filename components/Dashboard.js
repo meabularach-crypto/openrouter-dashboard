@@ -16,7 +16,6 @@ const ARR_POINTS = {
     { date: '2026-03-15', arr: 19e9 },
     { date: '2026-04-06', arr: 30e9 },
     { date: '2026-05-28', arr: 47e9 },
-    { date: '2026-07-31', arr: 65e9 },
     { date: '2026-09-30', arr: 71e9 },
     { date: '2026-10-31', arr: 81e9 },
   ],
@@ -79,16 +78,32 @@ const MACRO_COLORS = {
 
 function nearestSpend(data, targetDate) {
   if (!data.length) return null;
+  const target = new Date(targetDate).getTime();
   let best = null;
   let bestDiff = Infinity;
+  // Prefer a point that actually has trailing28_spend, but only if it's within ~45 days.
+  // Otherwise fall back to the closest point that has any spend value.
   for (const d of data) {
-    const diff = Math.abs(new Date(d.date) - new Date(targetDate));
-    if (diff < bestDiff && d.trailing28_spend != null) {
+    const t = new Date(d.date).getTime();
+    const diff = Math.abs(t - target);
+    if (d.trailing28_spend != null && diff < bestDiff && diff <= 45 * 86400000) {
       bestDiff = diff;
       best = d.trailing28_spend;
     }
   }
-  return best;
+  if (best != null) return best;
+  // Fallback: closest daily spend (scaled roughly to a 28-day window if needed)
+  bestDiff = Infinity;
+  let fallback = null;
+  for (const d of data) {
+    const t = new Date(d.date).getTime();
+    const diff = Math.abs(t - target);
+    if (diff < bestDiff && (d.spend != null || d.trailing28_spend != null)) {
+      bestDiff = diff;
+      fallback = d.trailing28_spend != null ? d.trailing28_spend : (d.spend || 0) * 28;
+    }
+  }
+  return fallback;
 }
 
 function linearTrend(points) {
