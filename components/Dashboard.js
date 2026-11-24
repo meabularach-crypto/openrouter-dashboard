@@ -45,6 +45,7 @@ const PROVIDER_COLORS = {
   tencent: '#e67e22',
   moonshotai: '#34495e',
   minimax: '#d35400',
+  'x-ai': '#000000',
   nvidia: '#16a085',
   xiaomi: '#8e44ad',
   stepfun: '#27ae60',
@@ -172,6 +173,8 @@ export default function Dashboard() {
   const [categoryKeys, setCategoryKeys] = useState([]);
   const [macroWeekly, setMacroWeekly] = useState([]);
   const [macroKeys, setMacroKeys] = useState([]);
+  const [openWeightWeekly, setOpenWeightWeekly] = useState([]);
+  const [openWeightKeys, setOpenWeightKeys] = useState([]);
   const [providerDaily, setProviderDaily] = useState([]);
   const [providerKeys, setProviderKeys] = useState([]);
   const [modelByProviderDaily, setModelByProviderDaily] = useState([]);
@@ -235,6 +238,18 @@ export default function Dashboard() {
           setVisible(prev => {
             const next = { ...prev };
             (json.macros || []).forEach(m => { if (next[m] === undefined) next[m] = true; });
+            return next;
+          });
+        } else if (tab === 'open-weight') {
+          const res = await fetch(`/api/open-weight?days=${days}`);
+          const json = await res.json();
+          if (cancelled) return;
+          if (json.error) throw new Error(json.error);
+          setOpenWeightWeekly(json.weekly || []);
+          setOpenWeightKeys(json.providers || []);
+          setVisible(prev => {
+            const next = { ...prev };
+            (json.providers || []).forEach(p => { if (next[p] === undefined) next[p] = true; });
             return next;
           });
         } else if (tab === 'providers') {
@@ -400,6 +415,7 @@ export default function Dashboard() {
     else if (tab === 'models') downloadCSV(`model_mix_${provider}_${days}d.csv`, modelDaily);
     else if (tab === 'categories') downloadCSV(`categories_${days}d.csv`, categoryWeekly);
     else if (tab === 'macros') downloadCSV(`macro_categories_${days}d.csv`, macroWeekly);
+    else if (tab === 'open-weight') downloadCSV(`open_weight_share_${days}.csv`, openWeightWeekly);
     else if (tab === 'providers') downloadCSV(`providers_${days}d.csv`, providerDaily);
     else if (tab === 'models-by-provider') downloadCSV(`model_mix_${modelByProvider}_${days}d.csv`, modelByProviderDaily);
     else downloadCSV(`${tab}_${provider}_${days}d.csv`, data);
@@ -449,6 +465,7 @@ export default function Dashboard() {
         <button style={tabStyle(tab === 'categories')} onClick={() => setTab('categories')}>Task Categories</button>
         <button style={tabStyle(tab === 'macros')} onClick={() => setTab('macros')}>Macro Categories</button>
         <button style={tabStyle(tab === 'providers')} onClick={() => setTab('providers')}>Providers</button>
+        <button style={tabStyle(tab === 'open-weight')} onClick={() => setTab('open-weight')}>Open-Weight Share</button>
         <button onClick={handleDownload} style={{ marginLeft: 'auto', padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
           Download CSV
         </button>
@@ -485,7 +502,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {(tab === 'consolidated' || tab === 'categories' || tab === 'macros' || tab === 'providers' || tab === 'models-by-provider') && (
+      {(tab === 'consolidated' || tab === 'categories' || tab === 'macros' || tab === 'providers' || tab === 'models-by-provider' || tab === 'open-weight') && (
         <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
           {tab === 'categories' && (
             <label>View:&nbsp;
@@ -601,6 +618,37 @@ export default function Dashboard() {
             </ResponsiveContainer>
           );
         })()
+      ) : tab === 'open-weight' ? (
+        openWeightWeekly.length === 0 ? <div style={{ padding: 20 }}>No open-weight data</div> :
+        <ResponsiveContainer width="100%" height={520}>
+          <BarChart data={openWeightWeekly} margin={{ top: 10, right: 30, left: 10, bottom: 60 }}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="week" minTickGap={30} angle={-35} textAnchor="end" height={60} />
+            <YAxis tickFormatter={v => (Number(v) || 0).toFixed(0) + '%'} domain={[0, 40]} />
+            <Tooltip formatter={(value) => value != null ? value.toFixed(1) + '%' : '—'} />
+            <Legend
+              onClick={legendClick}
+              formatter={legendFormatter}
+              payload={openWeightKeys.map(p => ({
+                value: p === 'x-ai' ? 'xAI' : p === 'z-ai' ? 'Z.ai' : p === 'moonshotai' ? 'Moonshot AI' : p,
+                dataKey: p,
+                color: PROVIDER_COLORS[p] || '#888',
+                type: 'rect',
+              }))}
+            />
+            {openWeightKeys.map((p) => (
+              visible[p] !== false && (
+                <Bar
+                  key={p}
+                  dataKey={p}
+                  stackId="a"
+                  fill={PROVIDER_COLORS[p] || '#888'}
+                  name={p}
+                />
+              )
+            ))}
+          </BarChart>
+        </ResponsiveContainer>
       ) : tab === 'providers' ? (
         providerDaily.length === 0 ? <div style={{ padding: 20 }}>No provider data</div> :
         <ResponsiveContainer width="100%" height={520}>
